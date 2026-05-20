@@ -30,6 +30,8 @@ Copy `.env.example` to `.env` and fill in your providers and database settings.
 uv run uvicorn kb.server:app --reload --port 8000
 ```
 
+Open `http://localhost:8000/` for the Citadel UI.
+
 Health endpoints:
 
 ```bash
@@ -39,10 +41,28 @@ curl http://localhost:8000/readyz
 
 Core API endpoints:
 
+- `GET /api/mesh`
+- `GET /api/indexes`
+- `GET /events`
 - `POST /ingest`
 - `POST /search`
 - `POST /feedback`
 - `POST /improve`
+- `POST /api/self-upgrade`
+
+## Citadel UI
+
+The hosted UI is served by the same FastAPI process. It includes:
+
+- A live knowledge mesh canvas backed by `/api/mesh`.
+- Server-Sent Events at `/events` for real-time ingest, search, feedback, and
+  self-upgrade updates.
+- Index status panels for graph, vector, feedback, and global context stores.
+- Ingest, search, and self-upgrade controls that call the wrapper API.
+
+The first version visualizes Citadel's wrapper-level mesh activity. Deeper
+Cognee graph introspection can be added behind the same `/api/mesh` contract
+once the production Cognee database providers are finalized.
 
 ## CLI
 

@@ -5,6 +5,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from kb.config import CitadelConfig
+from kb.mesh import MeshState
 from kb.models import FeedbackResult, IngestResult
 from kb.server import app
 
@@ -41,11 +42,15 @@ def test_healthz() -> None:
 
 def test_api_uses_configured_citadel_service() -> None:
     app.state.citadel = FakeCitadel()
+    app.state.mesh = MeshState()
     client = TestClient(app)
 
     ready = client.get("/readyz")
     ingest = client.post("/ingest", json={"data": "A useful note", "tags": ["research"]})
     search = client.post("/search", json={"query": "useful", "top_k": 3})
+    mesh = client.get("/api/mesh")
+    indexes = client.get("/api/indexes")
+    upgrade = client.post("/api/self-upgrade", json={})
 
     assert ready.status_code == 200
     assert ready.json()["default_dataset"] == "notes"
@@ -53,3 +58,17 @@ def test_api_uses_configured_citadel_service() -> None:
     assert ingest.json()["tags"] == ["research"]
     assert search.status_code == 200
     assert search.json()["results"][0]["top_k"] == 3
+    assert mesh.status_code == 200
+    assert mesh.json()["stats"]["documents"] == 1
+    assert indexes.status_code == 200
+    assert len(indexes.json()["indexes"]) == 4
+    assert upgrade.status_code == 200
+
+
+def test_ui_shell_is_served() -> None:
+    client = TestClient(app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Citadel Archive" in response.text

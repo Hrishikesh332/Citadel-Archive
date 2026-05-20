@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Citadel Archive</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Archive indexes">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">CA</div>
+          <div>
+            <h1>Citadel Archive</h1>
+            <p id="connectionLabel">Connecting</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Indexes</h2>
+            <button id="refreshButton" class="icon-button" type="button" aria-label="Refresh mesh">
+              R
+            </button>
+          </div>
+          <div id="indexList" class="index-list" aria-live="polite">
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Runtime</h2>
+          <dl class="stats">
+            <div><dt>Nodes</dt><dd id="statNodes">0</dd></div>
+            <div><dt>Edges</dt><dd id="statEdges">0</dd></div>
+            <div><dt>Memory</dt><dd id="statDocuments">0</dd></div>
+            <div><dt>Upgrades</dt><dd id="statUpgrades">0</dd></div>
+          </dl>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="graph-panel" aria-labelledby="graphTitle">
+          <div class="graph-toolbar">
+            <div>
+              <h2 id="graphTitle">Knowledge Mesh</h2>
+              <p id="graphMeta">Waiting for snapshot</p>
+            </div>
+            <div class="toolbar-actions">
+              <button id="fitButton" class="secondary-button" type="button">Fit</button>
+              <button id="pauseButton" class="secondary-button" type="button">Pause</button>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas
+              id="graphCanvas"
+              width="1200"
+              height="800"
+              tabindex="0"
+              aria-label="Live knowledge graph visualization"
+            ></canvas>
+          </div>
+          <div id="selectedNode" class="selection" aria-live="polite">
+            Select a node to inspect it.
+          </div>
+        </section>
+      </main>
+
+      <aside class="inspector" aria-label="Archive actions">
+        <section class="panel action-panel">
+          <h2>Ingest</h2>
+          <form id="ingestForm" class="form">
+            <div class="field">
+              <label for="ingestData">Memory</label>
+              <textarea
+                id="ingestData"
+                name="data"
+                rows="5"
+                required
+                placeholder="Decision: we will run Citadel on Railway."
+              ></textarea>
+              <p class="hint">Text is filtered, tagged, and sent through Cognee.</p>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="ingestDataset">Dataset</label>
+                <input id="ingestDataset" name="dataset" type="text" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="ingestTags">Tags</label>
+                <input
+                  id="ingestTags"
+                  name="tags"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="research, railway"
+                />
+              </div>
+            </div>
+            <p id="ingestError" class="form-error" role="alert"></p>
+            <button id="ingestSubmit" class="primary-button" type="submit">Ingest memory</button>
+          </form>
+        </section>
+
+        <section class="panel action-panel">
+          <h2>Search</h2>
+          <form id="searchForm" class="form">
+            <div class="field">
+              <label for="searchQuery">Query</label>
+              <input
+                id="searchQuery"
+                name="query"
+                type="search"
+                required
+                autocomplete="off"
+                placeholder="What changed in the archive?"
+              />
+            </div>
+            <div class="field-grid compact">
+              <div class="field">
+                <label for="searchDataset">Dataset</label>
+                <input id="searchDataset" name="dataset" type="text" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="searchTopK">Top K</label>
+                <input
+                  id="searchTopK"
+                  name="topK"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  value="10"
+                />
+              </div>
+            </div>
+            <p id="searchError" class="form-error" role="alert"></p>
+            <button id="searchSubmit" class="primary-button" type="submit">Search mesh</button>
+          </form>
+          <div id="searchResults" class="results" aria-live="polite"></div>
+        </section>
+
+        <section class="panel action-panel">
+          <div class="panel-heading">
+            <h2>Self Upgrade</h2>
+            <span id="upgradeStatus" class="status-chip">Standby</span>
+          </div>
+          <button id="upgradeButton" class="primary-button" type="button">Run improvement</button>
+          <p id="upgradeError" class="form-error" role="alert"></p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Live Events</h2>
+            <span id="eventCount" class="status-chip">0</span>
+          </div>
+          <ol id="eventList" class="event-list" aria-live="polite"></ol>
+        </section>
+      </aside>
+    </div>
+
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>

@@ -30,6 +30,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["kb"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"kb/static" = "kb/static"
+
 [tool.ruff]
 line-length = 100
 
