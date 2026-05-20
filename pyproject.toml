@@ -1,0 +1,35 @@
+[project]
+name = "citadel"
+version = "0.1.0"
+description = "A self-hosted knowledge-base wrapper built on top of Cognee."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    "cognee>=1.1.0,<2.0.0",
+    "python-dotenv>=1.0.1,<2.0.0",
+]
+
+[project.scripts]
+citadel = "kb.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0,<9",
+    "pytest-asyncio>=0.21.1,<2",
+    "ruff>=0.9.2,<1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kb"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from hashlib import sha256
+from typing import Any
+
+from kb.cognee_client import CogneeGateway, CogneePublicClient
+from kb.config import CitadelConfig
+from kb.filters import PreIngestFilter
+from kb.models import FeedbackRequest, FeedbackResult, IngestResult
+from kb.tags import merge_tags
+
+
+class Citadel:
+    def __init__(
+        self,
+        config: CitadelConfig | None = None,
+        *,
+        cognee: CogneeGateway | None = None,
+    ) -> None:
+        self.config = config or CitadelConfig.from_env()
+        self.cognee = cognee or CogneePublicClient()
+        self.filter = PreIngestFilter(
+            min_chars=self.config.min_chars,
+            exclude_patterns=self.config.exclude_patterns,
+        )
+        self._seen_hashes: set[str] = set()
+
+    @classmethod
+    def from_env(cls) -> "Citadel":
+        return cls(CitadelConfig.from_env())
+
+    async def ingest(
+        self,
+        data: str,
+        *,
+        dataset: str | None = None,
+        tags: Iterable[str] | None = None,
+        session_id: str | None = None,
+    ) -> IngestResult:
+        target_dataset = dataset or self.config.default_dataset
+        merged_tags = merge_tags(self.config.default_tags, tags)
+        decision = self.filter.check(data)
+        if not decision.accepted:
+            return IngestResult(False, decision.reason, target_dataset, merged_tags)
+
+        content_hash = sha256(data.encode("utf-8")).hexdigest()
+        if content_hash in self._seen_hashes:
+            return IngestResult(False, "duplicate_in_process", target_dataset, merged_tags)
+        self._seen_hashes.add(content_hash)
+
+        result = await self.cognee.remember(
+            data,
+            dataset_name=target_dataset,
+            session_id=session_id,
+            tags=merged_tags,
+        )
+        return IngestResult(True, "accepted", target_dataset, merged_tags, result)
+
+    async def search(
+        self,
+        query: str,
+        *,
+        dataset: str | None = None,
+        session_id: str | None = None,
+        top_k: int = 10,
+    ) -> list[Any]:
+        return await self.cognee.recall(
+            query,
+            dataset=dataset or self.config.default_dataset,
+            session_id=session_id or self.config.default_session,
+            top_k=top_k,
+        )
+
+    async def feedback(self, request: FeedbackRequest) -> FeedbackResult:
+        session_id = request.session_id or self.config.default_session
+        dataset = request.dataset or self.config.default_dataset
+        recorded = await self.cognee.add_feedback(
+            session_id=session_id,
+            qa_id=request.qa_id,
+            score=request.score,
+            text=request.text,
+        )
+        improved = False
+        if recorded and self.config.auto_improve:
+            await self.cognee.improve(
+                dataset=dataset,
+                session_ids=[session_id],
+                build_global_context_index=self.config.build_global_context_index,
+            )
+            improved = True
+        return FeedbackResult(recorded=recorded, improved=improved)
+
+    async def improve(
+        self,
+        *,
+        dataset: str | None = None,
+        session_ids: list[str] | None = None,
+    ) -> Any:
+        return await self.cognee.improve(
+            dataset=dataset or self.config.default_dataset,
+            session_ids=session_ids,
+            build_global_context_index=self.config.build_global_context_index,
+        )
