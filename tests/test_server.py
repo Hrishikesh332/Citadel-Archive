@@ -14,6 +14,7 @@ class FakeCitadel:
     config = CitadelConfig(
         tenant_id="test",
         default_dataset="notes",
+        admin_key="test-admin",
         auto_improve=True,
         build_global_context_index=True,
     )
@@ -31,6 +32,15 @@ class FakeCitadel:
         return {"dataset": kwargs["dataset"], "session_ids": kwargs["session_ids"]}
 
 
+def authed_client() -> TestClient:
+    app.state.citadel = FakeCitadel()
+    app.state.mesh = MeshState()
+    client = TestClient(app, base_url="https://testserver")
+    response = client.post("/admin/session", json={"admin_key": "test-admin"})
+    assert response.status_code == 200
+    return client
+
+
 def test_healthz() -> None:
     client = TestClient(app)
 
@@ -41,9 +51,7 @@ def test_healthz() -> None:
 
 
 def test_api_uses_configured_citadel_service() -> None:
-    app.state.citadel = FakeCitadel()
-    app.state.mesh = MeshState()
-    client = TestClient(app)
+    client = authed_client()
 
     ready = client.get("/readyz")
     ingest = client.post("/ingest", json={"data": "A useful note", "tags": ["research"]})
@@ -65,8 +73,18 @@ def test_api_uses_configured_citadel_service() -> None:
     assert upgrade.status_code == 200
 
 
-def test_ui_shell_is_served() -> None:
+def test_ui_requires_admin_key() -> None:
+    app.state.citadel = FakeCitadel()
     client = TestClient(app)
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_ui_shell_is_served_after_login() -> None:
+    client = authed_client()
 
     response = client.get("/")
 

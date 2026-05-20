@@ -27,6 +27,7 @@ def _bool(value: str | None, *, default: bool = False) -> bool:
 class CitadelConfig:
     tenant_id: str = "personal"
     user_id: str = "local"
+    admin_key: str | None = None
     default_dataset: str = "personal"
     default_session: str = "personal-session"
     default_tags: tuple[str, ...] = field(default_factory=tuple)
@@ -48,6 +49,7 @@ class CitadelConfig:
         return cls(
             tenant_id=os.getenv("CITADEL_TENANT_ID", "personal"),
             user_id=os.getenv("CITADEL_USER_ID", "local"),
+            admin_key=os.getenv("CITADEL_ADMIN_KEY") or None,
             default_dataset=os.getenv("CITADEL_DEFAULT_DATASET", "personal"),
             default_session=os.getenv("CITADEL_DEFAULT_SESSION", "personal-session"),
             default_tags=tuple(_csv(os.getenv("CITADEL_DEFAULT_TAGS"))),
@@ -65,6 +67,7 @@ class CitadelConfig:
         return CitadelConfig(
             tenant_id=self.tenant_id,
             user_id=self.user_id,
+            admin_key=self.admin_key,
             default_dataset=self.default_dataset,
             default_session=self.default_session,
             default_tags=merged,
