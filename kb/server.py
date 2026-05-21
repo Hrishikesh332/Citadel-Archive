@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from kb.access import AccessIdentity, AccessStore, ROLE_ORDER, hash_api_token
 from kb.github_sync import GitHubOrgSyncer
 from kb.mesh import MeshState
 from kb.models import FeedbackRequest
@@ -27,7 +28,6 @@ app = FastAPI(
 STATIC_DIR = Path(__file__).with_name("static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 ADMIN_COOKIE = "citadel_admin"
-ROLE_ORDER = {"reader": 1, "writer": 2, "admin": 3}
 
 LOGIN_HTML = """<!doctype html>
 <html lang="en">
@@ -136,6 +136,15 @@ class GitHubSyncBody(BaseModel):
     force: bool = False
 
 
+class AccessTokenBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: str = Field(default="reader")
+    kind: str = Field(default="service_account")
+    scopes: list[str] | None = None
+    team_id: str | None = None
+    expires_at: str | None = None
+
+
 def get_citadel() -> Citadel:
     if not hasattr(app.state, "citadel"):
         app.state.citadel = Citadel.from_env()
@@ -154,6 +163,18 @@ def get_github_syncer() -> GitHubOrgSyncer:
     return GitHubOrgSyncer(get_citadel())
 
 
+def get_access_store() -> AccessStore:
+    existing = getattr(app.state, "access_store", None)
+    if isinstance(existing, AccessStore):
+        return existing
+    config = get_citadel().config
+    app.state.access_store = AccessStore(
+        config.access_store_path,
+        max_audit_events=config.audit_max_events,
+    )
+    return app.state.access_store
+
+
 def sse(event: str, data: dict[str, Any]) -> str:
     payload = json.dumps(data, default=str)
     return f"event: {event}\ndata: {payload}\n\n"
@@ -169,6 +190,17 @@ def configured_access_keys() -> list[tuple[str, str]]:
     return entries
 
 
+def env_identity(role: str) -> AccessIdentity:
+    return AccessIdentity(
+        role=role,
+        actor_id=f"bootstrap:{role}",
+        actor_kind="bootstrap_key",
+        actor_name=f"{role.title()} bootstrap key",
+        source="env",
+        scopes=(),
+    )
+
+
 def session_token(role: str, access_key: str) -> str:
     message = f"citadel-session:v2:{role}".encode("utf-8")
     return hmac.new(access_key.encode("utf-8"), message, hashlib.sha256).hexdigest()
@@ -178,39 +210,82 @@ def cookie_value(role: str, access_key: str) -> str:
     return f"{role}:{session_token(role, access_key)}"
 
 
-def role_for_access_key(access_key: str) -> str | None:
+def token_session_signature(role: str, token_id: str, token_hash: str) -> str:
+    message = f"citadel-session:v2:token:{role}:{token_id}".encode("utf-8")
+    return hmac.new(token_hash.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def token_cookie_value(identity: AccessIdentity, token_hash: str) -> str:
+    if not identity.token_id:
+        raise ValueError("Token identity missing token ID.")
+    signature = token_session_signature(identity.role, identity.token_id, token_hash)
+    return f"token:{identity.role}:{identity.token_id}:{signature}"
+
+
+def access_key_identity(access_key: str) -> tuple[AccessIdentity, str] | None:
     for role, key in configured_access_keys():
         if secrets.compare_digest(access_key, key):
-            return role
+            return env_identity(role), cookie_value(role, access_key)
+    token_session = get_access_store().authenticate_token(access_key)
+    if token_session:
+        return token_session.identity, token_cookie_value(
+            token_session.identity,
+            hash_api_token(access_key),
+        )
     return None
 
 
-def session_role(request: Request) -> str | None:
+def session_identity(request: Request) -> AccessIdentity | None:
     session = request.cookies.get(ADMIN_COOKIE)
     if not session:
         return None
     for role, key in configured_access_keys():
         if secrets.compare_digest(session, cookie_value(role, key)):
-            return role
-    return None
+            return env_identity(role)
+    parts = session.split(":")
+    if len(parts) != 4 or parts[0] != "token":
+        return None
+    _, role, token_id, signature = parts
+    token_session = get_access_store().token_session(token_id)
+    if not token_session or token_session.identity.role != role:
+        return None
+    expected = token_session_signature(role, token_id, token_session.token_hash)
+    if not secrets.compare_digest(signature, expected):
+        return None
+    return token_session.identity
 
 
-def require_role(request: Request, minimum_role: str) -> str:
-    role = session_role(request)
-    if not role:
+def session_role(request: Request) -> str | None:
+    identity = session_identity(request)
+    return identity.role if identity else None
+
+
+def require_role(request: Request, minimum_role: str) -> AccessIdentity:
+    identity = session_identity(request)
+    if not identity:
         raise HTTPException(status_code=401, detail="Access key required.")
-    if ROLE_ORDER[role] < ROLE_ORDER[minimum_role]:
+    if ROLE_ORDER[identity.role] < ROLE_ORDER[minimum_role]:
         raise HTTPException(status_code=403, detail=f"{minimum_role.title()} access required.")
-    return role
+    return identity
 
 
-def role_payload(role: str) -> dict[str, Any]:
+def role_payload(role: str, identity: AccessIdentity | None = None) -> dict[str, Any]:
     return {
         "role": role,
         "capabilities": {
             "read": ROLE_ORDER[role] >= ROLE_ORDER["reader"],
             "write": ROLE_ORDER[role] >= ROLE_ORDER["writer"],
             "admin": ROLE_ORDER[role] >= ROLE_ORDER["admin"],
+        },
+        "actor": None
+        if identity is None
+        else {
+            "id": identity.actor_id,
+            "kind": identity.actor_kind,
+            "name": identity.actor_name,
+            "source": identity.source,
+            "token_id": identity.token_id,
+            "scopes": list(identity.scopes),
         },
     }
 
@@ -230,22 +305,23 @@ async def login() -> HTMLResponse:
 @app.post("/admin/session")
 async def create_admin_session(body: AdminSessionBody, response: Response) -> dict[str, Any]:
     access_key = body.access_key or body.admin_key
-    if not configured_access_keys():
+    if not configured_access_keys() and not get_access_store().has_tokens():
         raise HTTPException(status_code=503, detail="Access keys are not configured.")
     if not access_key:
         raise HTTPException(status_code=422, detail="Access key is required.")
-    role = role_for_access_key(access_key)
-    if not role:
+    identity_with_cookie = access_key_identity(access_key)
+    if not identity_with_cookie:
         raise HTTPException(status_code=401, detail="Access key was rejected.")
+    identity, session_cookie = identity_with_cookie
     response.set_cookie(
         ADMIN_COOKIE,
-        cookie_value(role, access_key),
+        session_cookie,
         httponly=True,
         secure=True,
         samesite="lax",
         max_age=60 * 60 * 12,
     )
-    return {"ok": True, **role_payload(role)}
+    return {"ok": True, **role_payload(identity.role, identity)}
 
 
 @app.post("/admin/logout")
@@ -256,8 +332,85 @@ async def logout(response: Response) -> dict[str, bool]:
 
 @app.get("/api/session")
 async def current_session(request: Request) -> dict[str, Any]:
-    role = require_role(request, "reader")
-    return {"ok": True, **role_payload(role)}
+    identity = require_role(request, "reader")
+    return {"ok": True, **role_payload(identity.role, identity)}
+
+
+@app.get("/api/access")
+async def access_snapshot(request: Request) -> dict[str, Any]:
+    require_role(request, "admin")
+    bootstrap_counts = {"reader": 0, "writer": 0, "admin": 0}
+    for role, _ in configured_access_keys():
+        bootstrap_counts[role] += 1
+    return {
+        "ok": True,
+        "bootstrap_keys": bootstrap_counts,
+        **get_access_store().snapshot(),
+    }
+
+
+@app.get("/api/audit")
+async def audit_snapshot(request: Request) -> dict[str, Any]:
+    require_role(request, "admin")
+    return {"ok": True, "audit_events": get_access_store().snapshot()["audit_events"]}
+
+
+@app.post("/api/access/tokens")
+async def create_access_token(body: AccessTokenBody, request: Request) -> dict[str, Any]:
+    actor = require_role(request, "admin")
+    try:
+        created = get_access_store().create_principal_token(
+            name=body.name,
+            kind=body.kind,
+            role=body.role,
+            scopes=body.scopes,
+            team_id=body.team_id,
+            expires_at=body.expires_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    get_access_store().record_event(
+        action="access.token.create",
+        actor=actor,
+        success=True,
+        detail={
+            "principal_id": created.principal.id,
+            "token_id": created.api_token.id,
+            "role": created.api_token.role,
+            "kind": created.principal.kind,
+        },
+    )
+    return {
+        "ok": True,
+        "token": created.token,
+        "principal": jsonable_encoder(created.principal),
+        "api_token": jsonable_encoder(
+            {key: value for key, value in created.api_token.__dict__.items() if key != "token_hash"}
+        ),
+    }
+
+
+@app.post("/api/access/tokens/{token_id}/revoke")
+async def revoke_access_token(token_id: str, request: Request) -> dict[str, Any]:
+    actor = require_role(request, "admin")
+    revoked = get_access_store().revoke_token(token_id)
+    if not revoked:
+        get_access_store().record_event(
+            action="access.token.revoke",
+            actor=actor,
+            success=False,
+            detail={"token_id": token_id, "reason": "not_found"},
+        )
+        raise HTTPException(status_code=404, detail="Token not found.")
+    get_access_store().record_event(
+        action="access.token.revoke",
+        actor=actor,
+        success=True,
+        detail={"token_id": token_id},
+    )
+    redacted = {key: value for key, value in revoked.__dict__.items() if key != "token_hash"}
+    return {"ok": True, "api_token": jsonable_encoder(redacted)}
 
 
 @app.get("/healthz")

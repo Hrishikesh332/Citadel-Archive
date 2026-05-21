@@ -455,14 +455,87 @@
             <section class="window action-panel">
               <div class="window-titlebar">
                 <div>
-                  <h2>Sharing Model</h2>
-                  <p class="panel-kicker">Current implementation</p>
+                  <h2>Invite Or Agent Token</h2>
+                  <p class="panel-kicker">Stored locally, token shown once</p>
+                </div>
+                <span id="accessTokenStatus" class="status-chip">Ready</span>
+              </div>
+              <form id="accessTokenForm" class="form">
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="accessName">Name</label>
+                    <input
+                      id="accessName"
+                      name="name"
+                      type="text"
+                      placeholder="Alice or research-agent"
+                      autocomplete="off"
+                      required
+                    />
+                  </div>
+                  <div class="field">
+                    <label for="accessRole">Role</label>
+                    <select id="accessRole" name="role">
+                      <option value="reader">Read only</option>
+                      <option value="writer">Read write</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="accessKind">Identity type</label>
+                    <select id="accessKind" name="kind">
+                      <option value="user">Team member</option>
+                      <option value="service_account">Autonomous agent</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="accessTeam">Team scope</label>
+                    <input
+                      id="accessTeam"
+                      name="teamId"
+                      type="text"
+                      placeholder="default"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+                <button id="accessTokenSubmit" class="primary-button" type="submit">
+                  Create access token
+                </button>
+                <p id="accessTokenError" class="form-error" role="alert"></p>
+              </form>
+              <div id="newAccessToken" class="token-reveal" hidden></div>
+            </section>
+            <div class="access-grid">
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Principals</h2>
+                    <p class="panel-kicker">Users and service accounts</p>
+                  </div>
+                </div>
+                <div id="accessPrincipalList" class="entity-list"></div>
+              </section>
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Tokens</h2>
+                    <p class="panel-kicker">Hashed at rest</p>
+                  </div>
+                </div>
+                <div id="accessTokenList" class="entity-list"></div>
+              </section>
+            </div>
+            <section class="window action-panel">
+              <div class="window-titlebar">
+                <div>
+                  <h2>Audit</h2>
+                  <p class="panel-kicker">Recent access events</p>
                 </div>
               </div>
-              <p class="hint">
-                Add one generated key per teammate in Railway variables, redeploy, then share that
-                key with the teammate. A database-backed invite screen is still a later feature.
-              </p>
+              <ol id="accessAuditList" class="event-list"></ol>
             </section>
           </section>
 

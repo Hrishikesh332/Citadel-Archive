@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from kb.access import AccessStore
 from kb.config import CitadelConfig
 from kb.mesh import MeshState
 from kb.models import FeedbackResult, IngestResult
@@ -179,3 +180,61 @@ def test_ui_shell_is_served_after_login() -> None:
     assert response.status_code == 200
     assert "Citadel Archive" in response.text
     assert "GitHub Sync" in response.text
+
+
+def test_admin_can_create_and_use_scoped_access_token(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    client = authed_client()
+
+    created = client.post(
+        "/api/access/tokens",
+        json={"name": "research-agent", "role": "reader", "kind": "service_account"},
+    )
+
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["token"].startswith("ctdl_")
+    assert "token_hash" not in payload["api_token"]
+
+    access = client.get("/api/access")
+    assert access.status_code == 200
+    assert access.json()["principals"][0]["name"] == "research-agent"
+    assert access.json()["tokens"][0]["prefix"] == payload["token"][:12]
+    assert "token_hash" not in access.text
+
+    token_client = authed_client(payload["token"])
+    session = token_client.get("/api/session")
+    search = token_client.post("/search", json={"query": "useful"})
+    ingest = token_client.post("/ingest", json={"data": "A useful note"})
+    admin_access = token_client.get("/api/access")
+
+    assert session.status_code == 200
+    assert session.json()["role"] == "reader"
+    assert session.json()["actor"]["name"] == "research-agent"
+    assert search.status_code == 200
+    assert ingest.status_code == 403
+    assert admin_access.status_code == 403
+
+
+def test_access_tokens_are_hashed_and_revocable(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    client = authed_client()
+    created = client.post(
+        "/api/access/tokens",
+        json={"name": "writer", "role": "writer", "kind": "user"},
+    )
+    token = created.json()["token"]
+    token_id = created.json()["api_token"]["id"]
+
+    raw_store = (tmp_path / "access.json").read_text()
+    assert token not in raw_store
+    assert "token_hash" in raw_store
+
+    revoke = client.post(f"/api/access/tokens/{token_id}/revoke", json={})
+    assert revoke.status_code == 200
+
+    rejected = TestClient(app, base_url="https://testserver").post(
+        "/admin/session",
+        json={"access_key": token},
+    )
+    assert rejected.status_code == 401

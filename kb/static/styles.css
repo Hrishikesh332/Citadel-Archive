@@ -375,6 +375,57 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.access-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.entity-item,
+.token-reveal {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.entity-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.entity-item strong,
+.token-reveal strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.entity-item p,
+.token-reveal p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.token-reveal {
+  overflow-wrap: anywhere;
+}
+
+.token-reveal code {
+  display: block;
+  margin-top: 8px;
+  color: var(--info);
+  font-family: var(--mono);
+}
+
 .window,
 .rail-card,
 .metrics-window {
@@ -694,6 +745,7 @@ legend {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -703,11 +755,16 @@ textarea {
   padding: 10px 11px;
 }
 
+select {
+  min-height: 40px;
+}
+
 textarea {
   resize: vertical;
 }
 
 input[aria-invalid="true"],
+select[aria-invalid="true"],
 textarea[aria-invalid="true"] {
   border-color: var(--danger);
 }
@@ -1045,6 +1102,10 @@ textarea[aria-invalid="true"] {
 
   .page-grid,
   .role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .access-grid {
     grid-template-columns: 1fr;
   }
 

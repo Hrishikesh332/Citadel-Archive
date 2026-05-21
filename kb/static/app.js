@@ -35,6 +35,11 @@ const syncRunSummary = document.getElementById("syncRunSummary");
 const syncResult = document.getElementById("syncResult");
 const feedbackStatus = document.getElementById("feedbackStatus");
 const feedbackResult = document.getElementById("feedbackResult");
+const accessTokenStatus = document.getElementById("accessTokenStatus");
+const accessPrincipalList = document.getElementById("accessPrincipalList");
+const accessTokenList = document.getElementById("accessTokenList");
+const accessAuditList = document.getElementById("accessAuditList");
+const newAccessToken = document.getElementById("newAccessToken");
 const pageButtons = Array.from(document.querySelectorAll("[data-page-target]"));
 const pages = Array.from(document.querySelectorAll("[data-page]"));
 const roleOrder = { reader: 1, writer: 2, admin: 3 };
@@ -151,6 +156,9 @@ function setPage(name) {
   }
   resizeCanvas();
   if (state.snapshot) mergeGraph(state.snapshot);
+  if (resolvedName === "access") {
+    loadAccess();
+  }
 }
 
 function initializeNavigation() {
@@ -492,6 +500,112 @@ async function loadGithubSync() {
   }
 }
 
+async function loadAccess() {
+  if (!canUse("admin")) return;
+  accessTokenStatus.textContent = "Loading";
+  accessTokenStatus.className = "status-chip status-standby";
+  try {
+    const snapshot = await api("/api/access");
+    renderAccess(snapshot);
+    accessTokenStatus.textContent = "Ready";
+    accessTokenStatus.className = "status-chip status-enabled";
+  } catch (error) {
+    accessTokenStatus.textContent = "Error";
+    accessTokenStatus.className = "status-chip status-error";
+    accessPrincipalList.innerHTML = "";
+    accessPrincipalList.append(emptyState("Could not load access", error.message));
+  }
+}
+
+function renderAccess(snapshot) {
+  accessPrincipalList.innerHTML = "";
+  accessTokenList.innerHTML = "";
+  accessAuditList.innerHTML = "";
+
+  if (!snapshot.principals?.length) {
+    accessPrincipalList.append(
+      emptyState("No stored principals", "Create a teammate or service-account token."),
+    );
+  } else {
+    snapshot.principals.forEach((principal) => {
+      const item = document.createElement("div");
+      item.className = "entity-item";
+      item.innerHTML = `
+        <div>
+          <strong>${escapeHtml(principal.name)}</strong>
+          <p>${escapeHtml(principal.kind)} - ${escapeHtml(roleLabel(principal.role))}</p>
+          <p>${escapeHtml((principal.scopes || []).join(", "))}</p>
+        </div>
+        <span class="status-chip status-enabled">${escapeHtml(principal.team_id || "default")}</span>
+      `;
+      accessPrincipalList.append(item);
+    });
+  }
+
+  if (!snapshot.tokens?.length) {
+    accessTokenList.append(emptyState("No stored tokens", "Bootstrap env keys are still available."));
+  } else {
+    snapshot.tokens.forEach((token) => {
+      const item = document.createElement("div");
+      item.className = "entity-item";
+      const status = token.revoked_at ? "Revoked" : token.expires_at ? "Expires" : "Active";
+      item.innerHTML = `
+        <div>
+          <strong>${escapeHtml(token.name)}</strong>
+          <p>${escapeHtml(token.prefix)}... - ${escapeHtml(roleLabel(token.role))}</p>
+          <p>Last used ${escapeHtml(formatDate(token.last_used_at))}</p>
+        </div>
+      `;
+      const action = document.createElement("button");
+      action.className = "secondary-button compact-button";
+      action.type = "button";
+      action.textContent = token.revoked_at ? "Revoked" : "Revoke";
+      action.disabled = Boolean(token.revoked_at);
+      action.title = status;
+      action.addEventListener("click", () => revokeAccessToken(token.id));
+      item.append(action);
+      accessTokenList.append(item);
+    });
+  }
+
+  const events = snapshot.audit_events || [];
+  events.slice(-12).reverse().forEach((event) => {
+    const item = document.createElement("li");
+    item.className = "event-item";
+    item.innerHTML = `
+      <div class="event-row">
+        <span class="event-type">${escapeHtml(event.action)}</span>
+        <time class="event-time">${escapeHtml(formatDate(event.created_at))}</time>
+      </div>
+      <div class="event-message">${escapeHtml(event.actor_name || "System")}</div>
+      <div class="event-details">${escapeHtml(formatDetails(event.detail || {}))}</div>
+    `;
+    accessAuditList.append(item);
+  });
+  if (!events.length) {
+    const empty = document.createElement("li");
+    empty.className = "event-item empty-event";
+    empty.innerHTML = "<strong>No audit events</strong><p>Create or revoke a token to start the trail.</p>";
+    accessAuditList.append(empty);
+  }
+}
+
+async function revokeAccessToken(tokenId) {
+  accessTokenStatus.textContent = "Revoking";
+  accessTokenStatus.className = "status-chip status-standby";
+  try {
+    await api(`/api/access/tokens/${encodeURIComponent(tokenId)}/revoke`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await loadAccess();
+  } catch (error) {
+    accessTokenStatus.textContent = "Error";
+    accessTokenStatus.className = "status-chip status-error";
+    accessTokenList.prepend(emptyState("Could not revoke token", error.message));
+  }
+}
+
 function connectEvents() {
   if (!window.EventSource) {
     window.setInterval(() => loadMesh(false), 5000);
@@ -583,6 +697,51 @@ document.getElementById("githubSyncButton").addEventListener("click", async (eve
     syncRunSummary.className = "status-chip status-error";
   } finally {
     setBusy(button, false, { idle: "Run GitHub sync", loading: "Syncing" });
+  }
+});
+
+document.getElementById("accessTokenForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const button = document.getElementById("accessTokenSubmit");
+  const error = document.getElementById("accessTokenError");
+  const name = String(formData.get("name") || "").trim();
+  error.textContent = "";
+  newAccessToken.hidden = true;
+  newAccessToken.innerHTML = "";
+  if (!name) {
+    error.textContent = "Add a teammate or agent name.";
+    form.querySelector("[name='name']").focus();
+    return;
+  }
+  accessTokenStatus.textContent = "Creating";
+  accessTokenStatus.className = "status-chip status-standby";
+  setBusy(button, true, { idle: "Create access token", loading: "Creating" });
+  try {
+    const response = await api("/api/access/tokens", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        role: String(formData.get("role") || "reader"),
+        kind: String(formData.get("kind") || "service_account"),
+        team_id: String(formData.get("teamId") || "").trim() || null,
+      }),
+    });
+    newAccessToken.hidden = false;
+    newAccessToken.innerHTML = `
+      <strong>Token created</strong>
+      <p>Copy this now. Citadel stores only the hash and will not show it again.</p>
+      <code>${escapeHtml(response.token)}</code>
+    `;
+    form.reset();
+    await loadAccess();
+  } catch (err) {
+    error.textContent = err.message;
+    accessTokenStatus.textContent = "Failed";
+    accessTokenStatus.className = "status-chip status-error";
+  } finally {
+    setBusy(button, false, { idle: "Create access token", loading: "Creating" });
   }
 });
 

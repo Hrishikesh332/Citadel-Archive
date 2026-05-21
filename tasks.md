@@ -64,6 +64,14 @@
   - decision: build one secure Citadel MCP server as the shared capability layer
   - wrap the MCP server with thin Claude/Codex skills or plugins for workflows
   - keep Search and Ingest as separate read/write surfaces
+- Persistent access-token foundation added:
+  - JSON-backed access store at `CITADEL_ACCESS_STORE_PATH`
+  - `User`/`ServiceAccount`-style principals
+  - hashed API tokens with prefix, role, scopes, expiry, last-used timestamp,
+    and revoked state
+  - admin APIs for access snapshot, token creation, token revocation, and audit
+  - Access page token creation/list/revoke/audit UI
+  - tests passing locally: `20 passed`
 - Production health verified on 2026-05-21:
   - `Citadel-Archive`, `Citadel-GitHub-Sync`, and `Postgres` all `SUCCESS`
   - `/healthz` returns `{"ok":true,"service":"citadel"}`
@@ -141,27 +149,18 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## Next: Team Access
 
-- Add persistent access models:
-  - `User`
-  - `ServiceAccount`
-  - `Team`
-  - `Membership`
-  - `ApiToken`
-  - `AuditEvent`
-- Hash access tokens at rest.
-- Add token metadata:
-  - role
-  - scopes
-  - dataset/team scope
-  - expiry
-  - last used timestamp
-  - disabled/revoked state
+- Add full team/membership model:
+  - named teams
+  - memberships between users/service accounts and teams
+  - dataset-scoped grants
+- Add token expiry validation UI and creation controls.
+- Add token rotation flow.
+- Add disabled principal flow.
 - Add admin Access UI:
-  - add teammate
-  - assign reader/writer/admin
-  - create service account token
-  - revoke/rotate token
-  - show last used
+  - edit teammate/service-account role
+  - assign dataset/team scope
+  - rotate token
+  - disable principal
 - Keep existing env role keys as bootstrap/local fallback.
 
 ## Next: Agent Integrations

@@ -88,7 +88,7 @@ Pages:
 - Ingest: add new memory/source material to the archive.
 - Feedback: record feedback against Cognee QA IDs.
 - Sources: GitHub sync, indexes, and self-improvement controls.
-- Access: role setup instructions for admins.
+- Access: role setup, teammate tokens, service-account tokens, and audit trail.
 
 The first version visualizes Citadel's wrapper-level mesh activity. Deeper
 Cognee graph introspection can be added behind the same `/api/mesh` contract
@@ -96,23 +96,34 @@ once the production Cognee database providers are finalized.
 
 ## Access Roles
 
-Citadel currently uses environment-variable access keys, not a persistent user
-database. Generate one key per teammate and set it on the web service.
+Citadel supports bootstrap environment keys plus a lightweight persistent access
+store for teammate and agent tokens.
 
 ```bash
 CITADEL_READER_KEYS=alice-reader-key,bob-reader-key
 CITADEL_WRITER_KEYS=teammate-writer-key
 CITADEL_ADMIN_KEY=owner-admin-key
+CITADEL_ACCESS_STORE_PATH=/data/.citadel/access.json
+CITADEL_AUDIT_MAX_EVENTS=1000
 ```
 
 Role permissions:
 
 - Reader: view mesh, sources, indexes, events, and search.
 - Writer: reader permissions plus ingest and feedback.
-- Admin: writer permissions plus GitHub sync, self-upgrade, and access setup.
+- Admin: writer permissions plus GitHub sync, self-upgrade, token creation,
+  token revocation, and audit viewing.
 
-After changing keys on Railway, redeploy or restart the web service. A
-database-backed invite and member management UI is still planned.
+Use the Access page to create a user or service-account token. The token is
+shown once; Citadel stores only its hash, prefix, role, scopes, expiry, and
+last-used timestamp. Existing env keys remain the bootstrap/local fallback.
+
+Admin APIs:
+
+- `GET /api/access`
+- `POST /api/access/tokens`
+- `POST /api/access/tokens/{token_id}/revoke`
+- `GET /api/audit`
 
 ## CLI
 
