@@ -22,10 +22,12 @@ upstream package can be upgraded independently.
 uv sync --dev
 ```
 
-Copy `.env.example` to `.env` and fill in your providers and database settings.
+Copy `.env.example` to `.env` and fill in your providers, access keys, and
+database settings.
 
-Set `CITADEL_ADMIN_KEY` before exposing the service publicly. The UI and
-mutating API endpoints require that key.
+Set `CITADEL_ADMIN_KEY` before exposing the service publicly. Add
+`CITADEL_WRITER_KEYS` and `CITADEL_READER_KEYS` when sharing the workspace with
+teammates.
 
 For OpenRouter, Cognee expects the custom provider form:
 
@@ -53,6 +55,7 @@ curl http://localhost:8000/readyz
 
 Core API endpoints:
 
+- `GET /api/session`
 - `GET /api/mesh`
 - `GET /api/indexes`
 - `GET /api/github-sync`
@@ -69,16 +72,47 @@ Core API endpoints:
 The hosted UI is served by the same FastAPI process. It includes:
 
 - A live knowledge mesh canvas backed by `/api/mesh`.
+- An OS-style dashboard shell with system chrome, runtime metrics, source
+  status, page navigation, access controls, and a persistent status bar.
 - Server-Sent Events at `/events` for real-time ingest, search, feedback, and
   self-upgrade updates.
 - Index status panels for graph, vector, feedback, and global context stores.
-- Ingest, search, and self-upgrade controls that call the wrapper API.
+- Ingest, search, feedback, and self-upgrade controls that call the wrapper API.
 - GitHub organization sync status and a manual run control for the Masumi
   Network repository digest.
+
+Pages:
+
+- Overview: runtime metrics and the knowledge mesh.
+- Search: query existing indexed memory.
+- Ingest: add new memory/source material to the archive.
+- Feedback: record feedback against Cognee QA IDs.
+- Sources: GitHub sync, indexes, and self-improvement controls.
+- Access: role setup instructions for admins.
 
 The first version visualizes Citadel's wrapper-level mesh activity. Deeper
 Cognee graph introspection can be added behind the same `/api/mesh` contract
 once the production Cognee database providers are finalized.
+
+## Access Roles
+
+Citadel currently uses environment-variable access keys, not a persistent user
+database. Generate one key per teammate and set it on the web service.
+
+```bash
+CITADEL_READER_KEYS=alice-reader-key,bob-reader-key
+CITADEL_WRITER_KEYS=teammate-writer-key
+CITADEL_ADMIN_KEY=owner-admin-key
+```
+
+Role permissions:
+
+- Reader: view mesh, sources, indexes, events, and search.
+- Writer: reader permissions plus ingest and feedback.
+- Admin: writer permissions plus GitHub sync, self-upgrade, and access setup.
+
+After changing keys on Railway, redeploy or restart the web service. A
+database-backed invite and member management UI is still planned.
 
 ## CLI
 

@@ -49,6 +49,8 @@ class CitadelConfig:
     tenant_id: str = "personal"
     user_id: str = "local"
     admin_key: str | None = None
+    reader_keys: tuple[str, ...] = field(default_factory=tuple)
+    writer_keys: tuple[str, ...] = field(default_factory=tuple)
     default_dataset: str = "personal"
     default_session: str = "personal-session"
     default_tags: tuple[str, ...] = field(default_factory=tuple)
@@ -80,6 +82,8 @@ class CitadelConfig:
             tenant_id=os.getenv("CITADEL_TENANT_ID", "personal"),
             user_id=os.getenv("CITADEL_USER_ID", "local"),
             admin_key=os.getenv("CITADEL_ADMIN_KEY") or None,
+            reader_keys=tuple(_csv(os.getenv("CITADEL_READER_KEYS"))),
+            writer_keys=tuple(_csv(os.getenv("CITADEL_WRITER_KEYS"))),
             default_dataset=os.getenv("CITADEL_DEFAULT_DATASET", "personal"),
             default_session=os.getenv("CITADEL_DEFAULT_SESSION", "personal-session"),
             default_tags=tuple(_csv(os.getenv("CITADEL_DEFAULT_TAGS"))),

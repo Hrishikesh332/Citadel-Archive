@@ -7,11 +7,17 @@ const state = {
   draggingId: null,
   eventSource: null,
   animationFrame: null,
+  role: null,
 };
 
 const canvas = document.getElementById("graphCanvas");
 const ctx = canvas.getContext("2d");
+const systemStatus = document.querySelector(".system-status");
 const connectionLabel = document.getElementById("connectionLabel");
+const runtimeStatus = document.getElementById("runtimeStatus");
+const sessionRole = document.getElementById("sessionRole");
+const roleSummary = document.getElementById("roleSummary");
+const accessMode = document.getElementById("accessMode");
 const graphMeta = document.getElementById("graphMeta");
 const selectedNode = document.getElementById("selectedNode");
 const indexList = document.getElementById("indexList");
@@ -27,17 +33,22 @@ const syncTrackedRepos = document.getElementById("syncTrackedRepos");
 const githubSourceLink = document.getElementById("githubSourceLink");
 const syncRunSummary = document.getElementById("syncRunSummary");
 const syncResult = document.getElementById("syncResult");
+const feedbackStatus = document.getElementById("feedbackStatus");
+const feedbackResult = document.getElementById("feedbackResult");
+const pageButtons = Array.from(document.querySelectorAll("[data-page-target]"));
+const pages = Array.from(document.querySelectorAll("[data-page]"));
+const roleOrder = { reader: 1, writer: 2, admin: 3 };
 
 const colors = {
-  dataset: "#5fd0b0",
-  document: "#d6a15f",
-  tag: "#b9b1a5",
-  index: "#78b9f2",
-  query: "#e9c46a",
-  feedback: "#f08a92",
-  upgrade: "#62d58e",
-  source: "#8fd3ff",
-  repository: "#c4a7ff",
+  dataset: "#58c7a9",
+  document: "#e0b45b",
+  tag: "#b5bdc9",
+  index: "#8bc7ff",
+  query: "#f0c75e",
+  feedback: "#ff837a",
+  upgrade: "#69da93",
+  source: "#8bc7ff",
+  repository: "#b59cff",
 };
 
 function api(path, options = {}) {
@@ -64,6 +75,89 @@ function setBusy(button, busy, label) {
   if (label) {
     button.textContent = busy ? label.loading : label.idle;
   }
+}
+
+function setConnectionState(stateName, label) {
+  connectionLabel.textContent = label;
+  runtimeStatus.textContent = label;
+  runtimeStatus.className = `status-chip status-${stateName}`;
+  systemStatus.dataset.state = stateName;
+}
+
+function canUse(requiredRole = "reader") {
+  if (!state.role) return false;
+  return roleOrder[state.role] >= roleOrder[requiredRole];
+}
+
+function roleLabel(role) {
+  if (role === "admin") return "Admin";
+  if (role === "writer") return "Read write";
+  return "Read only";
+}
+
+function applyAccessControls() {
+  const label = state.role ? roleLabel(state.role) : "Locked";
+  sessionRole.textContent = label;
+  sessionRole.className = `status-chip ${state.role ? "status-enabled" : "status-error"}`;
+  roleSummary.textContent = state.role
+    ? `${label} workspace access`
+    : "No workspace session";
+  accessMode.textContent = label;
+  accessMode.className = sessionRole.className;
+
+  document.querySelectorAll("[data-min-role]").forEach((element) => {
+    const allowed = canUse(element.dataset.minRole);
+    if (element.classList.contains("nav-link")) {
+      element.disabled = !allowed;
+      return;
+    }
+    if (element.matches("button, input, textarea, select")) {
+      element.disabled = !allowed;
+    }
+  });
+}
+
+async function loadSession() {
+  try {
+    const session = await api("/api/session");
+    state.role = session.role;
+    applyAccessControls();
+  } catch {
+    window.location.assign("/login");
+    throw new Error("Session required");
+  }
+}
+
+function initialPage() {
+  const hash = window.location.hash.replace("#", "");
+  return pages.some((page) => page.dataset.page === hash) ? hash : "overview";
+}
+
+function setPage(name) {
+  const targetPage = pages.find((page) => page.dataset.page === name);
+  const requiredRole = targetPage?.dataset.minRole || "reader";
+  const allowed = targetPage && canUse(requiredRole);
+  const resolvedName = allowed ? name : "locked";
+
+  pages.forEach((page) => {
+    page.hidden = page.dataset.page !== resolvedName;
+    page.classList.toggle("page-active", page.dataset.page === resolvedName);
+  });
+  pageButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.pageTarget === name && allowed);
+  });
+  if (allowed && window.location.hash !== `#${name}`) {
+    window.history.replaceState(null, "", `#${name}`);
+  }
+  resizeCanvas();
+  if (state.snapshot) mergeGraph(state.snapshot);
+}
+
+function initializeNavigation() {
+  pageButtons.forEach((button) => {
+    button.addEventListener("click", () => setPage(button.dataset.pageTarget));
+  });
+  window.addEventListener("hashchange", () => setPage(initialPage()));
 }
 
 function resizeCanvas() {
@@ -117,6 +211,7 @@ function renderSnapshot(snapshot) {
   document.getElementById("statEdges").textContent = snapshot.stats.edges;
   document.getElementById("statDocuments").textContent = snapshot.stats.documents;
   document.getElementById("statSearches").textContent = snapshot.stats.searches;
+  document.getElementById("statFeedback").textContent = snapshot.stats.feedback;
   document.getElementById("statUpgrades").textContent = snapshot.stats.upgrades;
   document.getElementById("statErrors").textContent = snapshot.stats.errors;
   eventCount.textContent = String(snapshot.events.length);
@@ -174,6 +269,39 @@ function formatDetails(details = {}) {
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : value}`)
     .join(" | ");
+}
+
+function findFeedbackId(value) {
+  if (!value || typeof value !== "object") return null;
+  const directKeys = [
+    "qa_id",
+    "qaId",
+    "question_answer_id",
+    "questionAnswerId",
+    "answer_id",
+    "answerId",
+  ];
+  for (const key of directKeys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  for (const key of ["metadata", "payload", "result"]) {
+    const candidate = findFeedbackId(value[key]);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function fillFeedbackForm(qaId, score = "1") {
+  const form = document.getElementById("feedbackForm");
+  const qaInput = form.querySelector("[name='qaId']");
+  qaInput.value = qaId;
+  qaInput.setAttribute("aria-invalid", "false");
+  const scoreInput = form.querySelector(`[name='score'][value='${score}']`);
+  if (scoreInput) scoreInput.checked = true;
+  form.querySelector("[name='text']").focus();
 }
 
 function escapeHtml(value) {
@@ -337,10 +465,10 @@ async function loadMesh(showConnection = true) {
     const snapshot = await api("/api/mesh");
     mergeGraph(snapshot);
     if (showConnection) {
-      connectionLabel.textContent = "Live";
+      setConnectionState("enabled", "Live");
     }
   } catch (error) {
-    connectionLabel.textContent = "Offline";
+    setConnectionState("error", "Offline");
     meshAlert.hidden = false;
     meshAlertText.textContent = error.message || "Try refreshing the dashboard.";
     console.error(error);
@@ -372,7 +500,7 @@ function connectEvents() {
 
   state.eventSource = new EventSource("/events");
   state.eventSource.addEventListener("open", () => {
-    connectionLabel.textContent = "Live";
+    setConnectionState("enabled", "Live");
   });
   state.eventSource.addEventListener("snapshot", (event) => {
     mergeGraph(JSON.parse(event.data));
@@ -381,7 +509,7 @@ function connectEvents() {
     loadMesh(false);
   });
   state.eventSource.addEventListener("error", () => {
-    connectionLabel.textContent = "Reconnecting";
+    setConnectionState("standby", "Reconnecting");
   });
 }
 
@@ -532,6 +660,56 @@ document.getElementById("searchForm").addEventListener("submit", async (event) =
   }
 });
 
+document.getElementById("feedbackForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const button = document.getElementById("feedbackSubmit");
+  const error = document.getElementById("feedbackError");
+  const qaInput = form.querySelector("[name='qaId']");
+  const qaId = String(formData.get("qaId") || "").trim();
+  const scoreValue = String(formData.get("score") || "").trim();
+  error.textContent = "";
+  feedbackResult.innerHTML = "";
+  qaInput.setAttribute("aria-invalid", "false");
+  if (!qaId) {
+    error.textContent = "Add the QA ID before recording feedback.";
+    qaInput.setAttribute("aria-invalid", "true");
+    qaInput.focus();
+    return;
+  }
+  feedbackStatus.textContent = "Recording";
+  feedbackStatus.className = "status-chip status-standby";
+  setBusy(button, true, { idle: "Record feedback", loading: "Recording" });
+  try {
+    const response = await api("/feedback", {
+      method: "POST",
+      body: JSON.stringify({
+        qa_id: qaId,
+        score: scoreValue === "" ? null : Number.parseInt(scoreValue, 10),
+        text: String(formData.get("text") || "").trim() || null,
+        dataset: String(formData.get("dataset") || "").trim() || null,
+        session_id: String(formData.get("sessionId") || "").trim() || null,
+      }),
+    });
+    feedbackStatus.textContent = response.recorded ? "Recorded" : "Skipped";
+    feedbackStatus.className = `status-chip ${response.recorded ? "status-enabled" : "status-standby"}`;
+    feedbackResult.innerHTML = `
+      <dl class="result-grid">
+        <div><dt>Recorded</dt><dd>${response.recorded ? "Yes" : "No"}</dd></div>
+        <div><dt>Improved</dt><dd>${response.improved ? "Yes" : "No"}</dd></div>
+      </dl>
+    `;
+    await loadMesh(false);
+  } catch (err) {
+    error.textContent = err.message;
+    feedbackStatus.textContent = "Failed";
+    feedbackStatus.className = "status-chip status-error";
+  } finally {
+    setBusy(button, false, { idle: "Record feedback", loading: "Recording" });
+  }
+});
+
 document.getElementById("upgradeButton").addEventListener("click", async (event) => {
   const button = event.currentTarget;
   const error = document.getElementById("upgradeError");
@@ -566,10 +744,19 @@ function renderSearchResults(results) {
   results.slice(0, 6).forEach((result, index) => {
     const item = document.createElement("div");
     item.className = "result-item";
+    const feedbackId = findFeedbackId(result);
     item.innerHTML = `
       <div class="result-meta">Result ${index + 1}</div>
       <pre class="result-body">${escapeHtml(JSON.stringify(result, null, 2))}</pre>
     `;
+    if (feedbackId) {
+      const action = document.createElement("button");
+      action.className = "secondary-button result-feedback-button";
+      action.type = "button";
+      action.textContent = "Use for feedback";
+      action.addEventListener("click", () => fillFeedbackForm(feedbackId));
+      item.append(action);
+    }
     container.append(item);
   });
 }
@@ -580,7 +767,11 @@ window.addEventListener("resize", () => {
 });
 
 resizeCanvas();
-loadMesh();
-loadGithubSync();
-connectEvents();
-simulate();
+initializeNavigation();
+loadSession().then(() => {
+  setPage(initialPage());
+  loadMesh();
+  loadGithubSync();
+  connectEvents();
+  simulate();
+});

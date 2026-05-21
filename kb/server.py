@@ -27,6 +27,7 @@ app = FastAPI(
 STATIC_DIR = Path(__file__).with_name("static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 ADMIN_COOKIE = "citadel_admin"
+ROLE_ORDER = {"reader": 1, "writer": 2, "admin": 3}
 
 LOGIN_HTML = """<!doctype html>
 <html lang="en">
@@ -43,15 +44,15 @@ LOGIN_HTML = """<!doctype html>
           <div class="brand-mark" aria-hidden="true">CA</div>
           <div>
             <h1>Citadel Archive</h1>
-            <p>Admin access</p>
+            <p>Workspace access</p>
           </div>
         </div>
         <form id="loginForm" class="form">
           <div class="field">
-            <label for="adminKey">Admin key</label>
+            <label for="adminKey">Access key</label>
             <input
               id="adminKey"
-              name="adminKey"
+              name="accessKey"
               type="password"
               autocomplete="current-password"
               required
@@ -59,7 +60,7 @@ LOGIN_HTML = """<!doctype html>
             />
           </div>
           <p id="loginError" class="form-error" role="alert"></p>
-          <button id="loginSubmit" class="primary-button" type="submit">Unlock archive</button>
+          <button id="loginSubmit" class="primary-button" type="submit">Open workspace</button>
         </form>
       </section>
     </main>
@@ -73,12 +74,12 @@ LOGIN_HTML = """<!doctype html>
         button.disabled = true;
         button.setAttribute("aria-busy", "true");
         button.textContent = "Checking";
-        const admin_key = new FormData(form).get("adminKey");
+        const access_key = new FormData(form).get("accessKey");
         try {
           const response = await fetch("/admin/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ admin_key }),
+            body: JSON.stringify({ access_key }),
           });
           if (!response.ok) {
             const body = await response.json().catch(() => ({}));
@@ -90,7 +91,7 @@ LOGIN_HTML = """<!doctype html>
         } finally {
           button.disabled = false;
           button.setAttribute("aria-busy", "false");
-          button.textContent = "Unlock archive";
+          button.textContent = "Open workspace";
         }
       });
     </script>
@@ -127,7 +128,8 @@ class ImproveBody(BaseModel):
 
 
 class AdminSessionBody(BaseModel):
-    admin_key: str = Field(min_length=1)
+    access_key: str | None = Field(default=None, min_length=1)
+    admin_key: str | None = Field(default=None, min_length=1)
 
 
 class GitHubSyncBody(BaseModel):
@@ -157,28 +159,65 @@ def sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-def admin_token(admin_key: str) -> str:
-    return hmac.new(admin_key.encode("utf-8"), b"citadel-admin-session:v1", hashlib.sha256).hexdigest()
+def configured_access_keys() -> list[tuple[str, str]]:
+    config = get_citadel().config
+    entries: list[tuple[str, str]] = []
+    if config.admin_key:
+        entries.append(("admin", config.admin_key))
+    entries.extend(("writer", key) for key in config.writer_keys)
+    entries.extend(("reader", key) for key in config.reader_keys)
+    return entries
 
 
-def is_admin(request: Request) -> bool:
-    admin_key = get_citadel().config.admin_key
-    if not admin_key:
-        return False
+def session_token(role: str, access_key: str) -> str:
+    message = f"citadel-session:v2:{role}".encode("utf-8")
+    return hmac.new(access_key.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def cookie_value(role: str, access_key: str) -> str:
+    return f"{role}:{session_token(role, access_key)}"
+
+
+def role_for_access_key(access_key: str) -> str | None:
+    for role, key in configured_access_keys():
+        if secrets.compare_digest(access_key, key):
+            return role
+    return None
+
+
+def session_role(request: Request) -> str | None:
     session = request.cookies.get(ADMIN_COOKIE)
     if not session:
-        return False
-    return secrets.compare_digest(session, admin_token(admin_key))
+        return None
+    for role, key in configured_access_keys():
+        if secrets.compare_digest(session, cookie_value(role, key)):
+            return role
+    return None
 
 
-def require_admin(request: Request) -> None:
-    if not is_admin(request):
-        raise HTTPException(status_code=401, detail="Admin key required.")
+def require_role(request: Request, minimum_role: str) -> str:
+    role = session_role(request)
+    if not role:
+        raise HTTPException(status_code=401, detail="Access key required.")
+    if ROLE_ORDER[role] < ROLE_ORDER[minimum_role]:
+        raise HTTPException(status_code=403, detail=f"{minimum_role.title()} access required.")
+    return role
+
+
+def role_payload(role: str) -> dict[str, Any]:
+    return {
+        "role": role,
+        "capabilities": {
+            "read": ROLE_ORDER[role] >= ROLE_ORDER["reader"],
+            "write": ROLE_ORDER[role] >= ROLE_ORDER["writer"],
+            "admin": ROLE_ORDER[role] >= ROLE_ORDER["admin"],
+        },
+    }
 
 
 @app.get("/", include_in_schema=False)
 async def ui(request: Request) -> Response:
-    if not is_admin(request):
+    if not session_role(request):
         return RedirectResponse("/login", status_code=303)
     return FileResponse(STATIC_DIR / "index.html")
 
@@ -189,27 +228,36 @@ async def login() -> HTMLResponse:
 
 
 @app.post("/admin/session")
-async def create_admin_session(body: AdminSessionBody, response: Response) -> dict[str, bool]:
-    admin_key = get_citadel().config.admin_key
-    if not admin_key:
-        raise HTTPException(status_code=503, detail="Admin key is not configured.")
-    if not secrets.compare_digest(body.admin_key, admin_key):
-        raise HTTPException(status_code=401, detail="Admin key was rejected.")
+async def create_admin_session(body: AdminSessionBody, response: Response) -> dict[str, Any]:
+    access_key = body.access_key or body.admin_key
+    if not configured_access_keys():
+        raise HTTPException(status_code=503, detail="Access keys are not configured.")
+    if not access_key:
+        raise HTTPException(status_code=422, detail="Access key is required.")
+    role = role_for_access_key(access_key)
+    if not role:
+        raise HTTPException(status_code=401, detail="Access key was rejected.")
     response.set_cookie(
         ADMIN_COOKIE,
-        admin_token(admin_key),
+        cookie_value(role, access_key),
         httponly=True,
         secure=True,
         samesite="lax",
         max_age=60 * 60 * 12,
     )
-    return {"ok": True}
+    return {"ok": True, **role_payload(role)}
 
 
 @app.post("/admin/logout")
 async def logout(response: Response) -> dict[str, bool]:
     response.delete_cookie(ADMIN_COOKIE)
     return {"ok": True}
+
+
+@app.get("/api/session")
+async def current_session(request: Request) -> dict[str, Any]:
+    role = require_role(request, "reader")
+    return {"ok": True, **role_payload(role)}
 
 
 @app.get("/healthz")
@@ -219,7 +267,7 @@ async def healthz() -> dict[str, str | bool]:
 
 @app.get("/readyz")
 async def readyz(request: Request) -> dict[str, Any]:
-    require_admin(request)
+    require_role(request, "reader")
     config = get_citadel().config
     return {
         "ok": True,
@@ -233,14 +281,14 @@ async def readyz(request: Request) -> dict[str, Any]:
 
 @app.get("/api/mesh")
 async def mesh(request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "reader")
     citadel = get_citadel()
     return jsonable_encoder(await get_mesh().snapshot(citadel.config))
 
 
 @app.get("/api/indexes")
 async def indexes(request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "reader")
     citadel = get_citadel()
     snapshot = await get_mesh().snapshot(citadel.config)
     return jsonable_encoder({"indexes": snapshot["indexes"], "stats": snapshot["stats"]})
@@ -248,13 +296,13 @@ async def indexes(request: Request) -> Any:
 
 @app.get("/api/github-sync")
 async def github_sync_status(request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "reader")
     return jsonable_encoder(await get_github_syncer().status())
 
 
 @app.post("/api/github-sync/run")
 async def run_github_sync(body: GitHubSyncBody, request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "admin")
     citadel = get_citadel()
     mesh_state = get_mesh()
     try:
@@ -268,7 +316,7 @@ async def run_github_sync(body: GitHubSyncBody, request: Request) -> Any:
 
 @app.get("/events")
 async def events(request: Request) -> StreamingResponse:
-    require_admin(request)
+    require_role(request, "reader")
     mesh_state = get_mesh()
     queue = mesh_state.subscribe()
 
@@ -291,7 +339,7 @@ async def events(request: Request) -> StreamingResponse:
 
 @app.post("/ingest")
 async def ingest(body: IngestBody, request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "writer")
     citadel = get_citadel()
     mesh_state = get_mesh()
     dataset = body.dataset or citadel.config.default_dataset
@@ -318,7 +366,7 @@ async def ingest(body: IngestBody, request: Request) -> Any:
 
 @app.post("/search")
 async def search(body: SearchBody, request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "reader")
     citadel = get_citadel()
     mesh_state = get_mesh()
     dataset = body.dataset or citadel.config.default_dataset
@@ -344,7 +392,7 @@ async def search(body: SearchBody, request: Request) -> Any:
 
 @app.post("/feedback")
 async def feedback(body: FeedbackBody, request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "writer")
     citadel = get_citadel()
     mesh_state = get_mesh()
     dataset = body.dataset or citadel.config.default_dataset
@@ -373,13 +421,13 @@ async def feedback(body: FeedbackBody, request: Request) -> Any:
 
 @app.post("/improve")
 async def improve(body: ImproveBody, request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "admin")
     return await run_improve(body)
 
 
 @app.post("/api/self-upgrade")
 async def self_upgrade(body: ImproveBody, request: Request) -> Any:
-    require_admin(request)
+    require_role(request, "admin")
     return await run_improve(body)
 
 

@@ -15,6 +15,8 @@ class FakeCitadel:
         tenant_id="test",
         default_dataset="notes",
         admin_key="test-admin",
+        reader_keys=("test-reader",),
+        writer_keys=("test-writer",),
         auto_improve=True,
         build_global_context_index=True,
     )
@@ -71,12 +73,12 @@ class FakeGitHubSyncer:
         }
 
 
-def authed_client() -> TestClient:
+def authed_client(access_key: str = "test-admin") -> TestClient:
     app.state.citadel = FakeCitadel()
     app.state.mesh = MeshState()
     app.state.github_syncer = FakeGitHubSyncer()
     client = TestClient(app, base_url="https://testserver")
-    response = client.post("/admin/session", json={"admin_key": "test-admin"})
+    response = client.post("/admin/session", json={"access_key": access_key})
     assert response.status_code == 200
     return client
 
@@ -100,7 +102,9 @@ def test_api_uses_configured_citadel_service() -> None:
     indexes = client.get("/api/indexes")
     sync_status = client.get("/api/github-sync")
     sync_run = client.post("/api/github-sync/run", json={"force": True})
+    feedback = client.post("/feedback", json={"qa_id": "qa-1", "score": 1, "text": "useful"})
     upgrade = client.post("/api/self-upgrade", json={})
+    updated_mesh = client.get("/api/mesh")
 
     assert ready.status_code == 200
     assert ready.json()["default_dataset"] == "notes"
@@ -116,7 +120,45 @@ def test_api_uses_configured_citadel_service() -> None:
     assert sync_status.json()["tracked_repositories"] == 3
     assert sync_run.status_code == 200
     assert sync_run.json()["changed_count"] == 1
+    assert feedback.status_code == 200
+    assert feedback.json() == {"recorded": True, "improved": True}
+    assert updated_mesh.status_code == 200
+    assert updated_mesh.json()["stats"]["feedback"] == 1
     assert upgrade.status_code == 200
+
+
+def test_reader_access_can_view_and_search_but_not_mutate() -> None:
+    client = authed_client("test-reader")
+
+    session = client.get("/api/session")
+    mesh = client.get("/api/mesh")
+    search = client.post("/search", json={"query": "useful"})
+    ingest = client.post("/ingest", json={"data": "A useful note"})
+    sync_run = client.post("/api/github-sync/run", json={"force": True})
+
+    assert session.status_code == 200
+    assert session.json()["role"] == "reader"
+    assert session.json()["capabilities"] == {"read": True, "write": False, "admin": False}
+    assert mesh.status_code == 200
+    assert search.status_code == 200
+    assert ingest.status_code == 403
+    assert sync_run.status_code == 403
+
+
+def test_writer_access_can_ingest_and_feedback_but_not_admin_actions() -> None:
+    client = authed_client("test-writer")
+
+    session = client.get("/api/session")
+    ingest = client.post("/ingest", json={"data": "A useful note"})
+    feedback = client.post("/feedback", json={"qa_id": "qa-1", "score": 1})
+    upgrade = client.post("/api/self-upgrade", json={})
+
+    assert session.status_code == 200
+    assert session.json()["role"] == "writer"
+    assert session.json()["capabilities"] == {"read": True, "write": True, "admin": False}
+    assert ingest.status_code == 200
+    assert feedback.status_code == 200
+    assert upgrade.status_code == 403
 
 
 def test_ui_requires_admin_key() -> None:
