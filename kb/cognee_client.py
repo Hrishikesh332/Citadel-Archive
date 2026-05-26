@@ -53,12 +53,45 @@ class CogneePublicClient:
         if not os.getenv("LLM_API_KEY") and os.getenv("OPENROUTER_API_KEY"):
             os.environ["LLM_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
 
+    async def _create_cognee_database(self) -> None:
+        from cognee.infrastructure.databases.relational import get_relational_engine
+
+        db_engine = get_relational_engine()
+        await db_engine.create_database()
+
+    def _data_with_metadata(self, data: Any, metadata: dict[str, Any] | None) -> Any:
+        if not metadata:
+            return data
+        try:
+            from cognee.tasks.ingestion.data_item import DataItem
+        except Exception:
+            return data
+
+        def attach(item: Any) -> Any:
+            if isinstance(item, DataItem):
+                merged = {**(item.external_metadata or {}), **metadata}
+                return DataItem(
+                    data=item.data,
+                    label=item.label,
+                    external_metadata=merged,
+                    data_id=item.data_id,
+                )
+            return DataItem(data=item, external_metadata=metadata)
+
+        if isinstance(data, list):
+            return [attach(item) for item in data]
+        return attach(data)
+
     async def _ensure_cognee_ready(self, cognee: Any) -> None:
         if self._startup_migrations_done:
             return
         run_startup_migrations = getattr(cognee, "run_startup_migrations", None)
         if run_startup_migrations is not None:
-            await run_startup_migrations()
+            try:
+                await run_startup_migrations()
+            except Exception:
+                await self._create_cognee_database()
+                await run_startup_migrations()
         self._startup_migrations_done = True
 
     async def remember(
@@ -74,17 +107,13 @@ class CogneePublicClient:
 
         await self._ensure_cognee_ready(cognee)
         metadata = {"citadel_tags": list(tags)} if tags else None
+        data = self._data_with_metadata(data, metadata)
 
         if hasattr(cognee, "remember"):
-            kwargs: dict[str, Any] = {}
-            if metadata:
-                kwargs["external_metadata"] = metadata
-
             return await cognee.remember(
                 data,
                 dataset_name=dataset_name,
                 session_id=session_id,
-                **kwargs,
             )
 
         kwargs = {"dataset_name": dataset_name}
