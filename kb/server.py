@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from kb.access import AccessIdentity, AccessStore, ROLE_ORDER, hash_api_token
 from kb.github_sync import GitHubOrgSyncer
+from kb.learning_agent import LearningAgent
 from kb.mesh import MeshState
 from kb.models import FeedbackRequest
 from kb.service import Citadel
@@ -136,6 +137,11 @@ class GitHubSyncBody(BaseModel):
     force: bool = False
 
 
+class LearningAgentRunBody(BaseModel):
+    force: bool = False
+    dry_run: bool = False
+
+
 class AccessTokenBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = Field(default="reader")
@@ -161,6 +167,12 @@ def get_github_syncer() -> GitHubOrgSyncer:
     if hasattr(app.state, "github_syncer"):
         return app.state.github_syncer
     return GitHubOrgSyncer(get_citadel())
+
+
+def get_learning_agent() -> LearningAgent:
+    if hasattr(app.state, "learning_agent"):
+        return app.state.learning_agent
+    return LearningAgent(get_citadel(), github_syncer=get_github_syncer())
 
 
 def get_access_store() -> AccessStore:
@@ -255,13 +267,31 @@ def session_identity(request: Request) -> AccessIdentity | None:
     return token_session.identity
 
 
+def bearer_identity(request: Request) -> AccessIdentity | None:
+    authorization = request.headers.get("authorization")
+    if not authorization:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if separator != " " or scheme.lower() != "bearer" or not token.strip():
+        return None
+    identity_with_cookie = access_key_identity(token.strip())
+    if not identity_with_cookie:
+        return None
+    identity, _ = identity_with_cookie
+    return identity
+
+
+def request_identity(request: Request) -> AccessIdentity | None:
+    return bearer_identity(request) or session_identity(request)
+
+
 def session_role(request: Request) -> str | None:
     identity = session_identity(request)
     return identity.role if identity else None
 
 
 def require_role(request: Request, minimum_role: str) -> AccessIdentity:
-    identity = session_identity(request)
+    identity = request_identity(request)
     if not identity:
         raise HTTPException(status_code=401, detail="Access key required.")
     if ROLE_ORDER[identity.role] < ROLE_ORDER[minimum_role]:
@@ -464,6 +494,46 @@ async def run_github_sync(body: GitHubSyncBody, request: Request) -> Any:
         await mesh_state.record_error(citadel.config, operation="github_sync", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     await mesh_state.record_github_sync(citadel.config, result)
+    return jsonable_encoder(result)
+
+
+@app.get("/api/learning-agent")
+async def learning_agent_status(request: Request) -> Any:
+    require_role(request, "reader")
+    return jsonable_encoder(await get_learning_agent().status())
+
+
+@app.post("/api/learning-agent/run")
+async def run_learning_agent(body: LearningAgentRunBody, request: Request) -> Any:
+    actor = require_role(request, "admin")
+    citadel = get_citadel()
+    mesh_state = get_mesh()
+    try:
+        result = await get_learning_agent().run(force=body.force, dry_run=body.dry_run)
+    except Exception as exc:  # pragma: no cover - depends on external sources and Cognee config.
+        await mesh_state.record_error(citadel.config, operation="learning_agent", error=str(exc))
+        get_access_store().record_event(
+            action="learning_agent.run",
+            actor=actor,
+            success=False,
+            detail={"force": body.force, "dry_run": body.dry_run, "error": str(exc)},
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    github_result = result.get("sources", {}).get("github")
+    if isinstance(github_result, dict):
+        await mesh_state.record_github_sync(citadel.config, github_result)
+    get_access_store().record_event(
+        action="learning_agent.run",
+        actor=actor,
+        success=True,
+        detail={
+            "force": body.force,
+            "dry_run": body.dry_run,
+            "ingested": result.get("ingested"),
+            "improved": result.get("improved"),
+        },
+    )
     return jsonable_encoder(result)
 
 

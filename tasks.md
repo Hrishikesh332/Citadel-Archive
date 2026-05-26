@@ -80,6 +80,19 @@
   - service: `Citadel-GitHub-Sync`
   - schedule: `0 3 * * *`
   - volume: `/data`
+- Source learning-agent foundation added:
+  - wraps GitHub source sync as `kb.learning_agent`
+  - captures recent commit summaries for changed repositories
+  - API added: `/api/learning-agent`, `/api/learning-agent/run`
+  - CLI added: `citadel learn`
+  - Railway run mode supports `CITADEL_RUN_MODE=learning-agent`
+- MCP support added:
+  - stdio server: `uv run python -m kb.mcp_server`
+  - tools for search, mesh, sources, ingest, feedback, learning-agent run, and improve
+  - resources for session, sources, indexes, and recent events
+  - prompts for answer-from-KB, ingest decision, and source-change summaries
+  - HTTP bearer tokens reuse Citadel reader/writer/admin access roles
+  - project `.mcp.json` added with `CITADEL_MCP_ACCESS_TOKEN` env expansion
 
 ## Current Railway State
 
@@ -87,7 +100,8 @@
   - `https://citadel-archive-production.up.railway.app/healthz`
   - `https://citadel-archive-production.up.railway.app/`
 - Cron service is deployed from commit `451efdf18f039d4586b3afa4505d024ca06b3864`.
-- Local feedback UI, OS dashboard, and role-key changes have not been deployed yet.
+- Local feedback UI, OS dashboard, role-key, learning-agent, and MCP changes have not
+  been deployed yet.
 - OpenRouter is configured through `OPENROUTER_API_KEY` and
   `LLM_MODEL=openrouter/free` on both Railway services.
 
@@ -136,16 +150,17 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## Next
 
+- Deploy local learning-agent and MCP changes to Railway.
 - Verify cron service next scheduled execution after 03:00 UTC.
 - Verify admin key unlocks UI.
 - Verify `/api/github-sync` in the hosted UI.
-- Run GitHub sync once manually.
+- Run the learning agent once manually.
 - Test real ingest -> Cognee -> Postgres/pgvector/Kuzu.
 - Test search.
 - Test hosted feedback with a real Cognee QA ID.
 - Test self-upgrade.
-- Deploy local OS dashboard and role-key changes to Railway after local smoke
-  test is complete.
+- Create team MCP service-account tokens and smoke-test search plus ingest from a
+  Claude/Codex MCP client.
 
 ## Next: Team Access
 
@@ -165,27 +180,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## Next: Agent Integrations
 
-- Build `kb/mcp_server.py` on top of existing Citadel service methods.
-- Expose reader MCP tools:
-  - `citadel_search`
-  - `citadel_list_sources`
-  - `citadel_get_mesh`
-- Expose writer MCP tools:
-  - `citadel_ingest`
-  - `citadel_record_feedback`
-- Expose admin MCP tools:
-  - `citadel_run_source_sync`
-  - `citadel_improve`
-- Expose MCP resources:
-  - `citadel://session`
-  - `citadel://datasets`
-  - `citadel://sources`
-  - `citadel://events/recent`
-- Expose MCP prompts:
-  - `citadel_answer_from_kb`
-  - `citadel_ingest_decision`
-  - `citadel_summarize_source_changes`
-- Add project `.mcp.json` for Claude Code with env-token expansion.
 - Add Codex skill or plugin package:
   - `SKILL.md` workflow instructions
   - bundled MCP server config

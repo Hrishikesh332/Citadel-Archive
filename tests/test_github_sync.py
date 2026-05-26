@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from kb.config import CitadelConfig
-from kb.github_sync import GitHubEvent, GitHubOrgSyncer, GitHubRepo
+from kb.github_sync import GitHubCommit, GitHubEvent, GitHubOrgSyncer, GitHubRepo
 from kb.models import IngestResult
 
 
@@ -58,6 +58,19 @@ class FakeGitHubClient:
             )
         ][:max_events]
 
+    def fetch_commits(self, repo: GitHubRepo, *, max_commits: int) -> list[GitHubCommit]:
+        return [
+            GitHubCommit(
+                repo=repo.full_name,
+                sha="abc123def456",
+                html_url=f"{repo.html_url}/commit/abc123def456",
+                message="teach the archive about commits",
+                authored_at="2026-05-21T00:00:00Z",
+                author_name="Sarthi Borkar",
+                author_login="sarthib7",
+            )
+        ][:max_commits]
+
 
 @pytest.mark.asyncio
 async def test_github_sync_ingests_daily_digest_and_persists_state(tmp_path: Any) -> None:
@@ -76,13 +89,16 @@ async def test_github_sync_ingests_daily_digest_and_persists_state(tmp_path: Any
     assert result["repos_scanned"] == 1
     assert result["changed_count"] == 1
     assert result["event_count"] == 1
+    assert result["commit_count"] == 1
     assert result["ingested"] is True
     assert result["improved"] is True
     assert "masumi-network/agent" in citadel.ingest_calls[0]["data"]
+    assert "teach the archive about commits" in citadel.ingest_calls[0]["data"]
     assert citadel.ingest_calls[0]["dataset"] == "masumi-network"
     assert citadel.improve_calls[0]["session_ids"] == ["masumi-github-daily"]
     assert status["tracked_repositories"] == 1
     assert status["seen_events"] == 1
+    assert status["tracked_commit_repositories"] == 1
 
 
 @pytest.mark.asyncio
@@ -104,4 +120,5 @@ async def test_github_sync_can_skip_unchanged_ingest(tmp_path: Any) -> None:
 
     assert second["changed_count"] == 0
     assert second["event_count"] == 0
+    assert second["commit_count"] == 0
     assert len(citadel.ingest_calls) == 1

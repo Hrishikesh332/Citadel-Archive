@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from kb.service import Citadel
@@ -139,6 +139,43 @@ class GitHubEvent:
         }
 
 
+@dataclass(frozen=True)
+class GitHubCommit:
+    repo: str
+    sha: str
+    html_url: str
+    message: str
+    authored_at: str | None
+    author_name: str | None
+    author_login: str | None
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], *, repo: str) -> "GitHubCommit":
+        commit = data.get("commit") or {}
+        author = commit.get("author") or {}
+        github_author = data.get("author") or {}
+        message = str(commit.get("message") or "").splitlines()[0]
+        return cls(
+            repo=repo,
+            sha=str(data.get("sha") or ""),
+            html_url=str(data.get("html_url") or ""),
+            message=_short(message, length=140),
+            authored_at=author.get("date"),
+            author_name=author.get("name"),
+            author_login=github_author.get("login"),
+        )
+
+    def summary_dict(self) -> dict[str, str | None]:
+        return {
+            "repo": self.repo,
+            "sha": self.sha[:12],
+            "url": self.html_url,
+            "message": self.message,
+            "authored_at": self.authored_at,
+            "author": self.author_login or self.author_name,
+        }
+
+
 class GitHubAPIError(RuntimeError):
     pass
 
@@ -190,6 +227,19 @@ class GitHubOrgClient:
             page += 1
         return events[:max_events]
 
+    def fetch_commits(self, repo: GitHubRepo, *, max_commits: int) -> list[GitHubCommit]:
+        if max_commits <= 0:
+            return []
+        params: dict[str, Any] = {
+            "per_page": min(max(max_commits, 1), 100),
+        }
+        if repo.default_branch:
+            params["sha"] = repo.default_branch
+        data = self._get_json(f"/repos/{quote(repo.full_name, safe='/')}/commits", params)
+        if not isinstance(data, list):
+            raise GitHubAPIError("GitHub returned an unexpected commits payload.")
+        return [GitHubCommit.from_api(item, repo=repo.full_name) for item in data[:max_commits]]
+
     def _get_json(self, path: str, params: dict[str, Any]) -> Any:
         query = urlencode(params)
         request = Request(
@@ -221,6 +271,8 @@ class GitHubOrgSyncer:
         state_path: str | Path | None = None,
         max_repos: int | None = None,
         max_events: int | None = None,
+        max_commits_per_repo: int | None = None,
+        include_commits: bool | None = None,
         ingest_unchanged: bool | None = None,
         run_improve: bool | None = None,
     ) -> None:
@@ -231,6 +283,14 @@ class GitHubOrgSyncer:
         self.state_path = Path(state_path or self.config.github_sync_state_path)
         self.max_repos = max_repos or self.config.github_sync_max_repos
         self.max_events = max_events or self.config.github_sync_max_events
+        self.max_commits_per_repo = (
+            self.config.github_sync_max_commits_per_repo
+            if max_commits_per_repo is None
+            else max_commits_per_repo
+        )
+        self.include_commits = (
+            self.config.github_sync_include_commits if include_commits is None else include_commits
+        )
         self.ingest_unchanged = (
             self.config.github_sync_ingest_unchanged
             if ingest_unchanged is None
@@ -255,6 +315,9 @@ class GitHubOrgSyncer:
             "last_digest_at": state.get("last_digest_at"),
             "tracked_repositories": len(state.get("repos") or {}),
             "seen_events": len(state.get("seen_event_ids") or []),
+            "tracked_commit_repositories": len(state.get("commits") or {}),
+            "include_commits": self.include_commits,
+            "max_commits_per_repo": self.max_commits_per_repo,
             "run_improve": self.run_improve,
             "ingest_unchanged": self.ingest_unchanged,
         }
@@ -271,13 +334,30 @@ class GitHubOrgSyncer:
             if force or previous_repos.get(repo.full_name, {}).get("fingerprint") != repo.fingerprint
         ]
         new_events = [event for event in events if force or event.id not in previous_event_ids]
-        should_ingest = force or self.ingest_unchanged or bool(changed_repos or new_events)
+        commit_candidates = repos if force else changed_repos
+        commits_by_repo = await asyncio.to_thread(self._fetch_commits, commit_candidates)
+        previous_commits = state.get("commits") or {}
+        if not isinstance(previous_commits, dict):
+            previous_commits = {}
+        seen_commits_by_repo = {
+            repo_name: set(shas or [])
+            for repo_name, shas in previous_commits.items()
+            if isinstance(shas, list)
+        }
+        new_commits = [
+            commit
+            for repo_commits in commits_by_repo.values()
+            for commit in repo_commits
+            if commit.sha and (force or commit.sha not in seen_commits_by_repo.get(commit.repo, set()))
+        ]
+        should_ingest = force or self.ingest_unchanged or bool(changed_repos or new_events or new_commits)
         digest = format_digest(
             org=self.org,
             checked_at=checked_at,
             repos=repos,
             changed_repos=changed_repos,
             events=new_events,
+            commits=new_commits,
         )
 
         ingest_result = None
@@ -296,12 +376,16 @@ class GitHubOrgSyncer:
                 )
 
         if not dry_run:
+            tracked_commits = dict(previous_commits)
+            for repo_name, repo_commits in commits_by_repo.items():
+                tracked_commits[repo_name] = [commit.sha for commit in repo_commits if commit.sha][:500]
             state.update(
                 {
                     "version": STATE_VERSION,
                     "org": self.org,
                     "last_checked_at": checked_at,
                     "repos": {repo.full_name: repo.state() for repo in repos},
+                    "commits": tracked_commits,
                     "seen_event_ids": [
                         event.id for event in events if event.id
                     ][:500],
@@ -320,7 +404,9 @@ class GitHubOrgSyncer:
             "repos_scanned": len(repos),
             "changed_count": len(changed_repos),
             "event_count": len(new_events),
+            "commit_count": len(new_commits),
             "changed_repositories": [repo.summary() for repo in changed_repos[:20]],
+            "recent_commits": [commit.summary_dict() for commit in new_commits[:40]],
             "recent_events": [event.summary_dict() for event in new_events[:20]],
             "ingested": bool(ingest_result and ingest_result.accepted),
             "ingest_reason": getattr(ingest_result, "reason", None),
@@ -334,17 +420,49 @@ class GitHubOrgSyncer:
         events = self.client.fetch_events(self.org, max_events=self.max_events)
         return repos, events
 
+    def _fetch_commits(self, repos: list[GitHubRepo]) -> dict[str, list[GitHubCommit]]:
+        if not self.include_commits or self.max_commits_per_repo <= 0:
+            return {}
+        commits: dict[str, list[GitHubCommit]] = {}
+        for repo in repos:
+            if not repo.full_name or repo.archived:
+                continue
+            commits[repo.full_name] = self.client.fetch_commits(
+                repo,
+                max_commits=self.max_commits_per_repo,
+            )
+        return commits
+
     def _load_state(self) -> dict[str, Any]:
         if not self.state_path.exists():
-            return {"version": STATE_VERSION, "org": self.org, "repos": {}, "seen_event_ids": []}
+            return {
+                "version": STATE_VERSION,
+                "org": self.org,
+                "repos": {},
+                "commits": {},
+                "seen_event_ids": [],
+            }
         try:
             with self.state_path.open("r", encoding="utf-8") as file:
                 data = json.load(file)
         except (OSError, json.JSONDecodeError):
-            return {"version": STATE_VERSION, "org": self.org, "repos": {}, "seen_event_ids": []}
+            return {
+                "version": STATE_VERSION,
+                "org": self.org,
+                "repos": {},
+                "commits": {},
+                "seen_event_ids": [],
+            }
         if not isinstance(data, dict):
-            return {"version": STATE_VERSION, "org": self.org, "repos": {}, "seen_event_ids": []}
+            return {
+                "version": STATE_VERSION,
+                "org": self.org,
+                "repos": {},
+                "commits": {},
+                "seen_event_ids": [],
+            }
         data.setdefault("repos", {})
+        data.setdefault("commits", {})
         data.setdefault("seen_event_ids", [])
         return data
 
@@ -363,6 +481,7 @@ def format_digest(
     repos: list[GitHubRepo],
     changed_repos: list[GitHubRepo],
     events: list[GitHubEvent],
+    commits: list[GitHubCommit],
 ) -> str:
     source_url = SOURCE_URL_TEMPLATE.format(org=org)
     lines = [
@@ -373,6 +492,7 @@ def format_digest(
         f"Repositories scanned: {len(repos)}",
         f"Changed repositories since last check: {len(changed_repos)}",
         f"New public organization events: {len(events)}",
+        f"New commits observed: {len(commits)}",
         "",
         "## Changed repositories",
     ]
@@ -401,6 +521,18 @@ def format_digest(
             )
     else:
         lines.append("- No new public org events were returned by GitHub.")
+
+    lines.extend(["", "## Recent commits"])
+    if commits:
+        for commit in commits[:40]:
+            author = commit.author_login or commit.author_name or "unknown author"
+            lines.append(
+                "- "
+                f"{commit.authored_at or 'unknown time'}: {author} committed "
+                f"{commit.sha[:12]} to {commit.repo}: {commit.message}. {commit.html_url}"
+            )
+    else:
+        lines.append("- No new commits were observed in changed repositories.")
 
     lines.extend(["", "## Most recently pushed repositories"])
     for repo in repos[:10]:
@@ -470,6 +602,8 @@ async def _sync_github(args: argparse.Namespace) -> None:
         state_path=args.state_path,
         max_repos=args.max_repos,
         max_events=args.max_events,
+        max_commits_per_repo=args.max_commits_per_repo,
+        include_commits=not args.skip_commits,
         ingest_unchanged=not args.skip_unchanged,
         run_improve=not args.skip_improve,
     )
@@ -483,9 +617,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-path", default=None, help="Persistent sync state JSON path")
     parser.add_argument("--max-repos", type=int, default=None, help="Maximum repositories to scan")
     parser.add_argument("--max-events", type=int, default=None, help="Maximum org events to scan")
+    parser.add_argument(
+        "--max-commits-per-repo",
+        type=int,
+        default=None,
+        help="Maximum recent commits to summarize per changed repository",
+    )
     parser.add_argument("--force", action="store_true", help="Treat all fetched activity as new")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and print without ingesting")
     parser.add_argument("--skip-improve", action="store_true", help="Do not run Citadel improve")
+    parser.add_argument("--skip-commits", action="store_true", help="Do not fetch commit summaries")
     parser.add_argument(
         "--skip-unchanged",
         action="store_true",

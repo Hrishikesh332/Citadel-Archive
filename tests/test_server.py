@@ -47,6 +47,9 @@ class FakeGitHubSyncer:
             "last_digest_at": "2026-05-21T00:00:00Z",
             "tracked_repositories": 3,
             "seen_events": 4,
+            "tracked_commit_repositories": 2,
+            "include_commits": True,
+            "max_commits_per_repo": 5,
             "run_improve": True,
             "ingest_unchanged": True,
         }
@@ -60,6 +63,7 @@ class FakeGitHubSyncer:
             "repos_scanned": 3,
             "changed_count": 1 if force else 0,
             "event_count": 2,
+            "commit_count": 1,
             "changed_repositories": [
                 {
                     "name": "agent",
@@ -68,9 +72,43 @@ class FakeGitHubSyncer:
                     "pushed_at": "2026-05-21T00:00:00Z",
                 }
             ],
+            "recent_commits": [
+                {
+                    "repo": "masumi-network/agent",
+                    "sha": "abc123def456",
+                    "message": "update docs",
+                }
+            ],
             "recent_events": [],
             "ingested": True,
             "improved": True,
+        }
+
+
+class FakeLearningAgent:
+    async def status(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "agent": "citadel-learning-agent",
+            "sources": {
+                "github": await FakeGitHubSyncer().status(),
+            },
+            "capabilities": ["summarize_recent_commits"],
+        }
+
+    async def run(self, *, force: bool = False, dry_run: bool = False) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "agent": "citadel-learning-agent",
+            "sources": {
+                "github": {
+                    **(await FakeGitHubSyncer().run(force=force)),
+                    "dry_run": dry_run,
+                }
+            },
+            "ingested": not dry_run,
+            "improved": not dry_run,
+            "dry_run": dry_run,
         }
 
 
@@ -78,6 +116,7 @@ def authed_client(access_key: str = "test-admin") -> TestClient:
     app.state.citadel = FakeCitadel()
     app.state.mesh = MeshState()
     app.state.github_syncer = FakeGitHubSyncer()
+    app.state.learning_agent = FakeLearningAgent()
     client = TestClient(app, base_url="https://testserver")
     response = client.post("/admin/session", json={"access_key": access_key})
     assert response.status_code == 200
@@ -103,6 +142,8 @@ def test_api_uses_configured_citadel_service() -> None:
     indexes = client.get("/api/indexes")
     sync_status = client.get("/api/github-sync")
     sync_run = client.post("/api/github-sync/run", json={"force": True})
+    learning_status = client.get("/api/learning-agent")
+    learning_run = client.post("/api/learning-agent/run", json={"force": True})
     feedback = client.post("/feedback", json={"qa_id": "qa-1", "score": 1, "text": "useful"})
     upgrade = client.post("/api/self-upgrade", json={})
     updated_mesh = client.get("/api/mesh")
@@ -121,6 +162,10 @@ def test_api_uses_configured_citadel_service() -> None:
     assert sync_status.json()["tracked_repositories"] == 3
     assert sync_run.status_code == 200
     assert sync_run.json()["changed_count"] == 1
+    assert learning_status.status_code == 200
+    assert learning_status.json()["agent"] == "citadel-learning-agent"
+    assert learning_run.status_code == 200
+    assert learning_run.json()["sources"]["github"]["commit_count"] == 1
     assert feedback.status_code == 200
     assert feedback.json() == {"recorded": True, "improved": True}
     assert updated_mesh.status_code == 200
@@ -214,6 +259,34 @@ def test_admin_can_create_and_use_scoped_access_token(tmp_path: Any) -> None:
     assert search.status_code == 200
     assert ingest.status_code == 403
     assert admin_access.status_code == 403
+
+
+def test_bearer_tokens_can_access_api_without_cookie(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    client = authed_client()
+    created = client.post(
+        "/api/access/tokens",
+        json={"name": "writer-agent", "role": "writer", "kind": "service_account"},
+    )
+    token = created.json()["token"]
+    api_client = TestClient(app, base_url="https://testserver")
+
+    session = api_client.get("/api/session", headers={"Authorization": f"Bearer {token}"})
+    ingest = api_client.post(
+        "/ingest",
+        json={"data": "A useful note"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    admin_run = api_client.post(
+        "/api/learning-agent/run",
+        json={"force": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert session.status_code == 200
+    assert session.json()["role"] == "writer"
+    assert ingest.status_code == 200
+    assert admin_run.status_code == 403
 
 
 def test_access_tokens_are_hashed_and_revocable(tmp_path: Any) -> None:

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "citadel": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "kb.mcp_server"],
+      "env": {
+        "CITADEL_HTTP_BASE_URL": "https://citadel-archive-production.up.railway.app",
+        "CITADEL_MCP_ACCESS_TOKEN": "${CITADEL_MCP_ACCESS_TOKEN}"
+      }
+    }
+  }
+}

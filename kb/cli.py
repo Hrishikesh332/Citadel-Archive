@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from kb.github_sync import GitHubOrgSyncer
+from kb.learning_agent import LearningAgent
 from kb.models import FeedbackRequest
 from kb.service import Citadel
 
@@ -63,10 +64,21 @@ async def _sync_github(args: argparse.Namespace) -> None:
         state_path=args.state_path,
         max_repos=args.max_repos,
         max_events=args.max_events,
+        max_commits_per_repo=args.max_commits_per_repo,
+        include_commits=not args.skip_commits,
         ingest_unchanged=not args.skip_unchanged,
         run_improve=not args.skip_improve,
     )
     result = await syncer.run(force=args.force, dry_run=args.dry_run)
+    _print_json(result)
+
+
+async def _learn(args: argparse.Namespace) -> None:
+    agent = LearningAgent.from_env()
+    result = await agent.status() if args.status else await agent.run(
+        force=args.force,
+        dry_run=args.dry_run,
+    )
     _print_json(result)
 
 
@@ -109,11 +121,22 @@ def build_parser() -> argparse.ArgumentParser:
     sync_github.add_argument("--state-path")
     sync_github.add_argument("--max-repos", type=int)
     sync_github.add_argument("--max-events", type=int)
+    sync_github.add_argument("--max-commits-per-repo", type=int)
     sync_github.add_argument("--force", action="store_true")
     sync_github.add_argument("--dry-run", action="store_true")
     sync_github.add_argument("--skip-improve", action="store_true")
+    sync_github.add_argument("--skip-commits", action="store_true")
     sync_github.add_argument("--skip-unchanged", action="store_true")
     sync_github.set_defaults(handler=_sync_github)
+
+    learn = subcommands.add_parser(
+        "learn",
+        help="Run the self-learning agent across configured sources",
+    )
+    learn.add_argument("--status", action="store_true")
+    learn.add_argument("--force", action="store_true")
+    learn.add_argument("--dry-run", action="store_true")
+    learn.set_defaults(handler=_learn)
 
     return parser
 

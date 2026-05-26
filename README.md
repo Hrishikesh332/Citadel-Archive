@@ -59,6 +59,7 @@ Core API endpoints:
 - `GET /api/mesh`
 - `GET /api/indexes`
 - `GET /api/github-sync`
+- `GET /api/learning-agent`
 - `GET /events`
 - `POST /ingest`
 - `POST /search`
@@ -66,6 +67,7 @@ Core API endpoints:
 - `POST /improve`
 - `POST /api/self-upgrade`
 - `POST /api/github-sync/run`
+- `POST /api/learning-agent/run`
 
 ## Citadel UI
 
@@ -80,6 +82,8 @@ The hosted UI is served by the same FastAPI process. It includes:
 - Ingest, search, feedback, and self-upgrade controls that call the wrapper API.
 - GitHub organization sync status and a manual run control for the Masumi
   Network repository digest.
+- A source-learning agent API that can scan GitHub activity, summarize commits,
+  ingest source digests, and trigger Cognee improvement.
 
 Pages:
 
@@ -117,6 +121,7 @@ Role permissions:
 Use the Access page to create a user or service-account token. The token is
 shown once; Citadel stores only its hash, prefix, role, scopes, expiry, and
 last-used timestamp. Existing env keys remain the bootstrap/local fallback.
+API and MCP clients can pass the token with `Authorization: Bearer <token>`.
 
 Admin APIs:
 
@@ -134,14 +139,17 @@ uv run citadel search "What did I learn about Railway?"
 uv run citadel feedback <qa-id> --score 1 --text "Useful answer"
 uv run citadel improve
 uv run citadel sync-github --org masumi-network
+uv run citadel learn --force
 uv run python -m kb.github_sync --org masumi-network --dry-run
+uv run python -m kb.learning_agent --status
 ```
 
 ## GitHub Organization Sync
 
 Citadel can fetch public repository activity from a GitHub organization, format
-it as a daily digest, ingest that digest into Cognee, and run improvement for
-the configured sync session.
+it as a daily digest, add recent commit summaries for changed repositories,
+ingest that digest into Cognee, and run improvement for the configured sync
+session.
 
 Default sync target:
 
@@ -150,6 +158,8 @@ CITADEL_GITHUB_ORG=masumi-network
 CITADEL_GITHUB_SYNC_DATASET=masumi-network
 CITADEL_GITHUB_SYNC_SESSION=masumi-github-daily
 CITADEL_GITHUB_SYNC_STATE_PATH=/data/.citadel/github_sync_state.json
+CITADEL_GITHUB_SYNC_MAX_COMMITS_PER_REPO=5
+CITADEL_GITHUB_SYNC_INCLUDE_COMMITS=true
 ```
 
 Use `GITHUB_TOKEN` or `CITADEL_GITHUB_TOKEN` for higher GitHub API limits or
@@ -163,7 +173,7 @@ expected `LLM_API_KEY` at runtime when needed.
 For Railway, create a second service from this repo with:
 
 ```bash
-CITADEL_RUN_MODE=github-sync
+CITADEL_RUN_MODE=learning-agent
 ```
 
 and set its cron schedule to:
@@ -173,8 +183,43 @@ and set its cron schedule to:
 ```
 
 That runs once every 24 hours at 03:00 UTC. The included `railway.toml` keeps
-the web service as the default mode and switches to the sync command only when
-`CITADEL_RUN_MODE=github-sync`.
+the web service as the default mode and switches to the learning-agent command
+when `CITADEL_RUN_MODE=learning-agent`. The older `github-sync` run mode still
+works for compatibility.
+
+## MCP Server
+
+Citadel includes a stdio MCP server for team agents. It calls the hosted
+Citadel HTTP API and uses the same reader/writer/admin tokens as the UI.
+
+```bash
+CITADEL_HTTP_BASE_URL=https://citadel-archive-production.up.railway.app
+CITADEL_MCP_ACCESS_TOKEN=ctdl_...
+uv run python -m kb.mcp_server
+```
+
+Recommended token roles:
+
+- Reader tokens: search, mesh, source status, resources.
+- Writer tokens: reader tools plus `citadel_ingest` and feedback.
+- Admin tokens: writer tools plus learning-agent runs and Cognee improvement.
+
+Example Claude/Codex MCP command:
+
+```json
+{
+  "command": "uv",
+  "args": ["run", "python", "-m", "kb.mcp_server"],
+  "env": {
+    "CITADEL_HTTP_BASE_URL": "https://citadel-archive-production.up.railway.app",
+    "CITADEL_MCP_ACCESS_TOKEN": "${CITADEL_MCP_ACCESS_TOKEN}"
+  }
+}
+```
+
+Exposed tools include `citadel_search`, `citadel_get_mesh`,
+`citadel_list_sources`, `citadel_ingest`, `citadel_record_feedback`,
+`citadel_run_learning_agent`, and `citadel_improve`.
 
 ## Python API
 
