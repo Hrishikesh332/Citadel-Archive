@@ -1,5 +1,7 @@
 # Citadel
 
+Last updated: 2026-05-26.
+
 Citadel is a thin self-hosted knowledge-base wrapper built on top of
 [Cognee](https://github.com/topoteretes/cognee), which is Apache-2.0 licensed.
 
@@ -74,6 +76,8 @@ Core API endpoints:
 The hosted UI is served by the same FastAPI process. It includes:
 
 - A live knowledge mesh canvas backed by `/api/mesh`.
+- A stable Three.js 3D mesh view with deterministic node placement, restrained
+  orbit controls, zoom limits, and desktop/mobile canvas coverage checks.
 - An OS-style dashboard shell with system chrome, runtime metrics, source
   status, page navigation, access controls, and a persistent status bar.
 - Server-Sent Events at `/events` for real-time ingest, search, feedback, and
