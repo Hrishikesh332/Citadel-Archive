@@ -25,7 +25,7 @@ from kb.service import Citadel
 app = FastAPI(
     title="Citadel Archive",
     version="0.1.0",
-    description="Self-hosted knowledge-base wrapper around Cognee.",
+    description="Self-hosted Organization Vault wrapper around Cognee.",
 )
 STATIC_DIR = Path(__file__).with_name("static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

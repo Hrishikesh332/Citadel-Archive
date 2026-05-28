@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--tag", action="append", default=[])
     ingest.set_defaults(handler=_ingest)
 
-    search = subcommands.add_parser("search", help="Search the knowledge base")
+    search = subcommands.add_parser("search", help="Search the Organization Vault")
     search.add_argument("query")
     search.add_argument("--dataset")
     search.add_argument("--session")
@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     learn = subcommands.add_parser(
         "learn",
-        help="Run the self-learning agent across configured sources",
+        help="Run the source learning agent across configured sources",
     )
     learn.add_argument("--status", action="store_true")
     learn.add_argument("--force", action="store_true")

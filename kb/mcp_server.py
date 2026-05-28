@@ -87,7 +87,7 @@ def create_mcp_server(client: CitadelHttpClient | None = None) -> FastMCP:
     mcp = FastMCP(
         "Citadel Archive",
         instructions=(
-            "Use Citadel to search shared team memory before answering project questions. "
+            "Use Citadel to search the Organization Vault before answering project questions. "
             "Use writer tools only when the user asks to add durable context."
         ),
     )
@@ -104,7 +104,7 @@ def create_mcp_server(client: CitadelHttpClient | None = None) -> FastMCP:
         session_id: str | None = None,
         top_k: int = 10,
     ) -> dict[str, Any]:
-        """Search the Citadel knowledge base."""
+        """Search the Citadel Organization Vault."""
         return _call(
             "citadel_search",
             lambda: http.post(
@@ -142,7 +142,7 @@ def create_mcp_server(client: CitadelHttpClient | None = None) -> FastMCP:
         tags: list[str] | None = None,
         session_id: str | None = None,
     ) -> dict[str, Any]:
-        """Add durable context to the Citadel knowledge base. Requires writer access."""
+        """Add durable context to the Citadel Organization Vault. Requires writer access."""
         return _call(
             "citadel_ingest",
             lambda: http.post(
@@ -181,7 +181,7 @@ def create_mcp_server(client: CitadelHttpClient | None = None) -> FastMCP:
 
     @mcp.tool()
     def citadel_run_learning_agent(force: bool = False, dry_run: bool = False) -> dict[str, Any]:
-        """Run the self-learning source agent. Requires admin access."""
+        """Run the source learning agent. Requires admin access."""
         return _call(
             "citadel_run_learning_agent",
             lambda: http.post("/api/learning-agent/run", {"force": force, "dry_run": dry_run}),
@@ -234,7 +234,7 @@ def create_mcp_server(client: CitadelHttpClient | None = None) -> FastMCP:
 
     @mcp.prompt()
     def citadel_ingest_decision(context: str, dataset: str | None = None) -> str:
-        """Prompt an agent to decide whether context should become durable memory."""
+        """Prompt an agent to decide whether context should become vault memory."""
         scope = f" for dataset {dataset}" if dataset else ""
         return (
             f"Decide whether this context should be ingested into Citadel{scope}:\n\n"

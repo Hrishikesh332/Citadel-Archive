@@ -230,7 +230,7 @@ def test_ui_shell_is_served_after_login() -> None:
     assert "Obsidian Vaults" in response.text
 
 
-def test_admin_can_create_and_use_scoped_access_token(tmp_path: Any) -> None:
+def test_admin_can_create_and_use_role_based_access_token(tmp_path: Any) -> None:
     app.state.access_store = AccessStore(tmp_path / "access.json")
     client = authed_client()
 
