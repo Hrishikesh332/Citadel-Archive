@@ -8,6 +8,17 @@ Citadel is a thin self-hosted knowledge-base wrapper built on top of
 This repository does not vendor Cognee. It imports Cognee as a dependency so the
 upstream package can be upgraded independently.
 
+## Product Direction
+
+Citadel is evolving into an **Organization Vault**: a cloud-hosted, access
+controlled company memory layer that syncs approved sources, structures that
+material into source-linked knowledge, and exposes it to teammates and agents
+through the UI, API, and MCP.
+
+The shareable plan lives in
+[`docs/organization-vault-plan.md`](docs/organization-vault-plan.md). The
+canonical domain language lives in [`CONTEXT.md`](CONTEXT.md).
+
 ## What This Adds
 
 - Pre-ingest filtering for empty, tiny, ignored, or duplicate inputs.
