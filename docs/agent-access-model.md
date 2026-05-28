@@ -2,8 +2,9 @@
 
 Research date: 2026-05-21.
 
-This note defines how Citadel should become a shared knowledge base for humans,
-Claude Code, Codex, and autonomous agents.
+This note defines how Citadel should expose the Organization Vault to humans,
+Claude Code, Codex, and autonomous agents. Agent-to-agent communication belongs
+to Masumi Agent Messenger; Citadel remains the shared memory and access layer.
 
 ## Recommendation
 
@@ -110,7 +111,30 @@ Roles:
 - Writer: reader plus ingest and feedback.
 - Admin: writer plus source sync, access management, agent tokens, settings.
 
-Scopes:
+Phase 1 agent action policy:
+
+- Reader agents may read, search, and view repository daily updates without
+  extra approval.
+- Writer agents may add vault contributions, submit feedback, update existing
+  writable knowledge, and provide updates.
+- Admin or explicit approval is required for source sync, learning/improvement
+  jobs, access token changes, role changes, conflict resolution, source deletes,
+  and source exclusions.
+
+Phase 1 access boundary:
+
+- Access tokens grant whole-vault access constrained by role.
+- Vault members and agent identities are still distinct actors.
+- Agent identities communicate through Masumi Agent Messenger and access Citadel
+  through their own bearer token or MCP configuration.
+- Vault members and agent identities use the same reader/writer/admin role model
+  for Citadel access.
+- Agent Messenger messages are not automatically Citadel knowledge; a writer or
+  admin may intentionally add durable outcomes to Citadel.
+- Department, dataset, source, repository, and tool-level scopes are later
+  refinements once the initial team workflow is proven.
+
+Future scopes:
 
 - `kb:read`
 - `kb:search`
@@ -127,12 +151,13 @@ Scopes:
 - Use browser sessions for humans and bearer tokens/OAuth for agents.
 - Store API tokens hashed, never plaintext.
 - Let admins create, rotate, disable, and expire agent tokens.
-- Scope every token to a role, dataset/team, and tool allowlist.
+- Scope every Phase 1 token to a role and whole-vault access; add dataset/team
+  and tool allowlists after the initial workflow is proven.
 - Rate limit per user/service account, especially search and ingest.
 - Audit every MCP call with actor, role, tool, dataset, success/failure, and
   request ID.
-- Treat retrieved KB content as untrusted context. Do not allow retrieved text to
-  override system/developer instructions.
+- Treat retrieved vault content as untrusted context. Do not allow retrieved
+  text to override system/developer instructions.
 - Sensitive MCP tools must require client approval: sync, improve, delete,
   reindex, invite, token creation.
 - Prefer OAuth 2.1 + Protected Resource Metadata for hosted remote MCP. Local
@@ -164,7 +189,7 @@ Role-specific defaults:
 ## Why Search And Ingest Are Separate
 
 Search is a read workflow. Ingest is a write workflow. Keeping them separate is
-important because readers should not be able to mutate the knowledge base.
+important because readers should not be able to mutate the Organization Vault.
 
 We can still make the product feel simple:
 
@@ -178,7 +203,7 @@ We can still make the product feel simple:
 1. Keep the current role-key system for immediate local testing.
 2. Add a persistent access store for users, service accounts, roles, tokens, and
    audit events.
-3. Add an admin Access page for inviting teammates and issuing scoped agent
+3. Add an admin Access page for inviting teammates and issuing role-based agent
    tokens.
 4. Build `kb/mcp_server.py` around the existing FastAPI service methods.
 5. Add `.mcp.json` for Claude Code project setup, using env-token expansion.

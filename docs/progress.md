@@ -7,6 +7,8 @@ Last updated: 2026-05-28.
 - Captured the shareable Organization Vault product plan in
   `docs/organization-vault-plan.md` and started the canonical domain glossary in
   `CONTEXT.md`.
+- Resolved Phase 1 access, Agent Messenger, source retention, repository daily
+  update, knowledge conflict, and Vault Backup Mirror language across docs.
 - Rethemed the Citadel web UI toward an Obsidian-style shared vault with a left
   ribbon, vault navigation, linked panes, and darker Obsidian-compatible visual
   tokens.

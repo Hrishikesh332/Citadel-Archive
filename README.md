@@ -1,8 +1,8 @@
 # Citadel
 
-Last updated: 2026-05-26.
+Last updated: 2026-05-28.
 
-Citadel is a thin self-hosted knowledge-base wrapper built on top of
+Citadel is a thin self-hosted Organization Vault wrapper built on top of
 [Cognee](https://github.com/topoteretes/cognee), which is Apache-2.0 licensed.
 
 This repository does not vendor Cognee. It imports Cognee as a dependency so the
@@ -10,14 +10,15 @@ upstream package can be upgraded independently.
 
 ## Product Direction
 
-Citadel is evolving into an **Organization Vault**: a cloud-hosted, access
-controlled company memory layer that syncs approved sources, structures that
-material into source-linked knowledge, and exposes it to teammates and agents
-through the UI, API, and MCP.
+Citadel is evolving into an **Organization Vault**: a cloud-hosted,
+access-controlled shared memory layer that syncs approved sources, turns source
+material into structured knowledge, and exposes that knowledge to teammates and
+agents through the UI, API, and MCP.
 
 The shareable plan lives in
 [`docs/organization-vault-plan.md`](docs/organization-vault-plan.md). The
-canonical domain language lives in [`CONTEXT.md`](CONTEXT.md).
+canonical domain language lives in [`CONTEXT.md`](CONTEXT.md). Architecture
+decisions live in [`docs/adr/`](docs/adr/).
 
 ## What This Adds
 
@@ -282,7 +283,7 @@ from kb import Citadel
 
 async def main() -> None:
     kb = Citadel.from_env()
-    await kb.ingest("Citadel keeps my knowledge base organized.", tags=["personal"])
+    await kb.ingest("Citadel keeps my Organization Vault organized.", tags=["personal"])
     results = await kb.search("What does Citadel do?")
     print(results)
 

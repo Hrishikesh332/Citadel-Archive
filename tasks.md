@@ -126,8 +126,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## Research-Backed Direction
 
-- Citadel should act like a workspace OS for the knowledge base, not a single
-  crowded dashboard page.
+- Citadel should act like a workspace OS for the Organization Vault, not a
+  single crowded dashboard page.
 - MCP is the main integration surface for Claude Code, Codex, OpenAI
   Responses/Agents workflows, and future autonomous agents.
 - Skills/plugins are distribution and workflow wrappers. They should not own
@@ -137,7 +137,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
   - service accounts
   - teams
   - memberships
-  - scoped API tokens
+  - role-based API tokens for Phase 1
+  - scoped API tokens after the initial team workflow is proven
   - audit events
 - Human access should use browser sessions. Agent access should use bearer
   tokens first, then OAuth/OIDC for hosted production.
@@ -147,6 +148,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
   - reindex/delete
   - invite/team changes
   - token creation
+- Vault Backup Mirror should start as a private GitHub repository for
+  text-heavy, diffable vault history and manifests. Large blobs should move to
+  object storage if the mirror approaches GitHub repository limits.
 
 ## Next
 
@@ -161,10 +165,12 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - Test self-upgrade.
 - Create team MCP service-account tokens and smoke-test search plus ingest from a
   Claude/Codex MCP client.
+- Design the Vault Backup Mirror export format and repository layout.
 
 ## Next: Team Access
 
-- Add full team/membership model:
+- Keep Phase 1 whole-vault access constrained by reader/writer/admin role.
+- Later add full team/membership scoping:
   - named teams
   - memberships between users/service accounts and teams
   - dataset-scoped grants
@@ -173,7 +179,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - Add disabled principal flow.
 - Add admin Access UI:
   - edit teammate/service-account role
-  - assign dataset/team scope
+  - assign dataset/team scope after scoped access is introduced
   - rotate token
   - disable principal
 - Keep existing env role keys as bootstrap/local fallback.
@@ -212,7 +218,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - Add Settings page:
   - model/provider state
   - source retention
-  - backup/export controls
+  - Vault Backup Mirror controls
   - health/config checks
 
 ## Later
@@ -223,7 +229,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - Rate limiting per user/service account/tool.
 - Structured audit export.
 - Secret rotation reminders.
-- Prompt-injection hardening for retrieved KB content:
+- Prompt-injection hardening for retrieved vault content:
   - mark retrieved text as untrusted context
   - keep source citations
   - reject tool instructions found inside retrieved content

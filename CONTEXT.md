@@ -5,16 +5,32 @@ Citadel is an organization knowledge context for shared, source-linked company m
 ## Language
 
 **Organization Vault**:
-A cloud-hosted, access-controlled body of company knowledge that is shared across humans and agents.
+A cloud-hosted, access-controlled shared memory layer for humans and agents.
 _Avoid_: knowledge base, database, company Obsidian
 
 **Source Material**:
 Raw company material that may be used to produce structured knowledge.
 _Avoid_: knowledge, truth, memory
 
+**Source Snapshot**:
+The retained evidence or source pointer used to reproduce what the **Organization Vault** learned from **Source Material**.
+_Avoid_: permanent dump, backup, index record
+
+**Vault Backup Mirror**:
+A secondary synced copy of vault evidence and history used for recovery, audit, and rebuilds.
+_Avoid_: source of truth, runtime store, live index
+
 **Structured Knowledge**:
 Source-linked company knowledge that has been organized into explicit concepts, relationships, and context.
 _Avoid_: raw data, unprocessed sync, dump
+
+**Knowledge Index**:
+A searchable organization of **Structured Knowledge** for fast retrieval.
+_Avoid_: database, file store, raw storage
+
+**Knowledge Mesh**:
+A relationship map that connects **Structured Knowledge** by source, concept, and provenance.
+_Avoid_: decorative graph, chat history, raw sync map
 
 **Learning Process**:
 The governed transformation of **Source Material** into **Structured Knowledge**.
@@ -25,8 +41,12 @@ A human participant who has permission to access an **Organization Vault**.
 _Avoid_: user, teammate, account
 
 **Agent Identity**:
-A non-human actor that has permission to access an **Organization Vault**.
+A non-human actor that uses agent messaging for communication and may access an **Organization Vault**.
 _Avoid_: bot, autonomous agent, service user
+
+**Agent Messenger**:
+The communication layer used by **Agent Identities** to exchange messages with each other.
+_Avoid_: vault chat, shared memory, organization vault, MCP
 
 **Access Token**:
 A revocable credential that lets a **Vault Member** or **Agent Identity** access an **Organization Vault**.
@@ -36,24 +56,87 @@ _Avoid_: MCP key, shared password, API secret
 A named permission level that determines what a **Vault Member** or **Agent Identity** may do in an **Organization Vault**.
 _Avoid_: read me access, write access key
 
+**Agent Action**:
+A vault operation performed by an **Agent Identity**.
+_Avoid_: background magic, unrestricted automation
+
+**Vault Contribution**:
+Structured or source-linked knowledge added to an **Organization Vault** by an actor with write permission.
+_Avoid_: chat message, random update, raw agent conversation
+
+**Repository Daily Update**:
+A source-linked summary of meaningful changes in one repository over a day.
+_Avoid_: employee report, department update, surveillance
+
+**Knowledge Conflict**:
+A visible disagreement between pieces of **Structured Knowledge** or their supporting **Source Snapshots**.
+_Avoid_: merge, overwrite, silent correction
+
 ## Relationships
 
 - An **Organization Vault** is accessed by humans and agents.
 - An **Organization Vault** contains **Structured Knowledge**.
-- **Structured Knowledge** is derived from **Source Material** through a **Learning Process**.
+- **Source Material** becomes useful to the **Organization Vault** through a **Learning Process**.
+- A **Source Snapshot** preserves enough evidence to cite, audit, or reprocess **Structured Knowledge**.
+- A **Vault Backup Mirror** keeps a redundant copy of vault evidence without serving live retrieval.
+- A **Learning Process** produces **Structured Knowledge**, a **Knowledge Index**, and a **Knowledge Mesh**.
 - A **Vault Member** or **Agent Identity** uses an **Access Token** to access an **Organization Vault**.
 - An **Access Role** limits what a **Vault Member** or **Agent Identity** may read or change.
+- An **Agent Action** is constrained by the **Agent Identity**'s **Access Role**.
+- An **Agent Identity** communicates with other **Agent Identities** through the **Agent Messenger**.
+- A **Vault Member** or **Agent Identity** with write permission may create a **Vault Contribution**.
+- **Agent Messenger** messages do not become **Vault Contributions** unless an actor with write permission adds them.
+- A **Repository Daily Update** summarizes repository changes, not individual people.
+- A **Knowledge Conflict** should be shown when source-linked knowledge disagrees.
 
 ## Example Dialogue
 
 > **Dev:** "Should this GitHub repository be added to the database?"
 > **Domain expert:** "Add it as **Source Material**. It becomes **Structured Knowledge** only after the **Learning Process** extracts useful context from it."
 >
+> **Dev:** "Can we search new material immediately?"
+> **Domain expert:** "Only after the **Learning Process** has made it part of the **Knowledge Index** and **Knowledge Mesh**."
+>
+> **Dev:** "Do we keep the raw material forever?"
+> **Domain expert:** "No. Keep a **Source Snapshot** when it is needed for citation, audit, or reprocessing; keep the **Knowledge Index** and **Knowledge Mesh** rebuildable."
+>
+> **Dev:** "Should the backup repository be the live knowledge store?"
+> **Domain expert:** "No. The **Vault Backup Mirror** is redundant storage for recovery and rebuilds, not the runtime vault."
+>
 > **Dev:** "Should every teammate get an MCP key?"
 > **Domain expert:** "Give each **Vault Member** or **Agent Identity** its own **Access Token** with the right **Access Role**."
+>
+> **Dev:** "Do agents talk to each other through the Organization Vault?"
+> **Domain expert:** "No. **Agent Identities** communicate through the **Agent Messenger** and use the **Organization Vault** as shared memory."
+>
+> **Dev:** "Can an agent save something it discussed with another agent?"
+> **Domain expert:** "Yes, if its **Access Role** allows writes, it can create a **Vault Contribution**."
+>
+> **Dev:** "What can an agent do without approval?"
+> **Domain expert:** "Reader agents can read and search. Writer agents can add contributions, submit feedback, and provide updates."
+>
+> **Dev:** "Should daily updates say what each person did?"
+> **Domain expert:** "No. A **Repository Daily Update** summarizes meaningful changes in one repository."
+>
+> **Dev:** "What belongs in a repository daily update?"
+> **Domain expert:** "Meaningful commits, pull requests, and repository changes."
+>
+> **Dev:** "What if a note disagrees with a newer repository change?"
+> **Domain expert:** "Prefer the newer source-linked repository truth for code behavior, but keep a visible **Knowledge Conflict**."
 
 ## Flagged Ambiguities
 
 - "knowledge base" and "database" were used for the same product concept; resolved: the product concept is **Organization Vault**.
+- "raw data retention" was unclear; resolved: keep **Source Snapshots** for citation, audit, and reprocessing, while treating indexes and mesh structures as derived.
+- "knowledge sync repository" sounded like a source of truth; resolved: the canonical term is **Vault Backup Mirror**, a redundant copy for recovery, audit, and rebuilds.
 - "self-learning" was used to mean automatic structuring of raw inputs; resolved: the domain term is **Learning Process**.
+- "indexed mesh" was used to describe retrieval; resolved: **Knowledge Index** supports search, while **Knowledge Mesh** represents relationships.
 - "MCP key" and "access token" were used for credentials; resolved: the domain term is **Access Token**.
+- "department-scoped access" was considered for the first version; resolved: initial **Access Tokens** grant whole-vault access constrained by **Access Role**.
+- "agent action approval" was broad; resolved: read/search is open to reader agents, writer agents may contribute, submit feedback, and provide updates, while sensitive admin actions stay gated.
+- "agent identity" was used as if it only meant vault access; resolved: **Agent Identities** communicate through the **Agent Messenger** and access the vault separately.
+- "agent messenger" was used near shared memory; resolved: **Agent Messenger** is the communication layer, while the **Organization Vault** is the shared memory layer.
+- "agent messages" were discussed as possible vault content; resolved: messages stay in **Agent Messenger** unless an actor with write permission creates a **Vault Contribution**.
+- "daily update" was initially broad; resolved: daily updates are **Repository Daily Updates**, not people or department reports.
+- "repository daily update detail" was too broad; resolved: include meaningful commits, pull requests, and repository changes only.
+- "conflicting knowledge" was unresolved; resolved: prefer newer source-linked repository truth for code behavior, while marking **Knowledge Conflicts** visibly.

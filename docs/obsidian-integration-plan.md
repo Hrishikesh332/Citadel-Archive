@@ -36,7 +36,7 @@ ribbon, side panes, properties, canvas, and extensions.
 
 Citadel's value is the shared, server-side layer:
 
-- role-gated team knowledge base
+- role-gated Organization Vault
 - durable source ingestion and sync
 - graph and GraphRAG over documents, chunks, entities, claims, citations, and
   provenance
@@ -243,11 +243,13 @@ P0 token model:
 - Plugin stores the token through Obsidian `SecretStorage`.
 - Every request uses bearer auth.
 - Plugin calls `/api/session` to disable actions the current actor cannot use.
+- P0 tokens grant whole-vault access constrained by role.
 
-P1 token model:
+Future token model:
 
-- Add scoped tokens with `team_id`, `dataset`, `vault_id`, expiry, and scopes.
-- Initial scopes: `kb:search`, `kb:ingest`, `obsidian:sync:push`,
+- Add scoped tokens with `team_id`, `dataset`, `vault_id`, expiry, and scopes
+  after the initial team workflow is proven.
+- Candidate scopes: `kb:search`, `kb:ingest`, `obsidian:sync:push`,
   `obsidian:sync:pull`, `sources:read`.
 - Add rotation, revocation, and audit filters.
 
