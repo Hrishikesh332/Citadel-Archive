@@ -8,6 +8,10 @@ const state = {
   paused: false,
   eventSource: null,
   role: null,
+  githubSync: null,
+  obsidianSources: null,
+  accessSnapshot: null,
+  settingsSnapshot: null,
 };
 
 const canvas = document.getElementById("graphCanvas");
@@ -54,6 +58,23 @@ const dashboardMcpList = document.getElementById("dashboardMcpList");
 const dashboardRecentLearning = document.getElementById("dashboardRecentLearning");
 const dashboardIndexSummary = document.getElementById("dashboardIndexSummary");
 const dashboardOpenIssue = document.getElementById("dashboardOpenIssue");
+const knowledgeStatus = document.getElementById("knowledgeStatus");
+const knowledgeSourceCount = document.getElementById("knowledgeSourceCount");
+const knowledgeSnapshotCount = document.getElementById("knowledgeSnapshotCount");
+const knowledgeConflictCount = document.getElementById("knowledgeConflictCount");
+const knowledgeRecordCount = document.getElementById("knowledgeRecordCount");
+const knowledgeDigestStatus = document.getElementById("knowledgeDigestStatus");
+const knowledgeDailyUpdate = document.getElementById("knowledgeDailyUpdate");
+const knowledgeSourceList = document.getElementById("knowledgeSourceList");
+const knowledgeIndexList = document.getElementById("knowledgeIndexList");
+const knowledgeRecentList = document.getElementById("knowledgeRecentList");
+const agentsStatus = document.getElementById("agentsStatus");
+const agentsTokenList = document.getElementById("agentsTokenList");
+const auditStatus = document.getElementById("auditStatus");
+const auditAccessList = document.getElementById("auditAccessList");
+const auditRuntimeList = document.getElementById("auditRuntimeList");
+const settingsStatus = document.getElementById("settingsStatus");
+const settingsHealthGrid = document.getElementById("settingsHealthGrid");
 const pageButtons = Array.from(document.querySelectorAll("[data-page-target]"));
 const pages = Array.from(document.querySelectorAll("[data-page]"));
 const roleOrder = { reader: 1, writer: 2, admin: 3 };
@@ -209,7 +230,8 @@ async function loadSession() {
 
 function initialPage() {
   const hash = window.location.hash.replace("#", "");
-  return pages.some((page) => page.dataset.page === hash) ? hash : "overview";
+  if (pages.some((page) => page.dataset.page === hash)) return hash;
+  return state.role === "reader" ? "search" : "overview";
 }
 
 function setPage(name) {
@@ -232,6 +254,12 @@ function setPage(name) {
   if (state.snapshot) mergeGraph(state.snapshot);
   if (resolvedName === "access") {
     loadAccess();
+  }
+  if (resolvedName === "agents" || resolvedName === "audit") {
+    loadAccess();
+  }
+  if (resolvedName === "settings") {
+    loadSettings();
   }
 }
 
@@ -301,6 +329,14 @@ function renderSnapshot(snapshot) {
   document.getElementById("statFeedback").textContent = snapshot.stats.feedback;
   document.getElementById("statUpgrades").textContent = snapshot.stats.upgrades;
   document.getElementById("statErrors").textContent = snapshot.stats.errors;
+  if (knowledgeStatus) {
+    const errorCount = Number(snapshot.stats.errors || 0);
+    knowledgeStatus.textContent = errorCount ? "Review" : "Current";
+    knowledgeStatus.className = `status-chip ${errorCount ? "status-error" : "status-enabled"}`;
+  }
+  if (knowledgeSnapshotCount) {
+    knowledgeSnapshotCount.textContent = String(snapshot.stats.documents || 0);
+  }
   eventCount.textContent = String(snapshot.events.length);
   renderDashboardIndexes(snapshot.indexes);
   renderDashboardRecentEvent(snapshot.events);
@@ -350,6 +386,7 @@ function renderSnapshot(snapshot) {
 function renderDashboardIndexes(indexes = []) {
   if (!dashboardIndexSummary) return;
   dashboardIndexSummary.innerHTML = "";
+  renderKnowledgeIndexes(indexes);
   if (!indexes.length) {
     dashboardIndexSummary.append(emptyState("No indexes", "Index status has not reported yet."));
     return;
@@ -370,6 +407,8 @@ function renderDashboardIndexes(indexes = []) {
 
 function renderDashboardRecentEvent(events = []) {
   if (!dashboardRecentLearning) return;
+  renderKnowledgeRecentEvents(events);
+  renderAuditRuntimeEvents(events);
   const latest = events[0];
   if (!latest) {
     dashboardRecentLearning.className = "empty-state compact-empty";
@@ -385,6 +424,70 @@ function renderDashboardRecentEvent(events = []) {
     <p>${escapeHtml(latest.type)} - ${escapeHtml(formatDate(latest.created_at))}</p>
     <p>${escapeHtml(formatDetails(latest.details || {}))}</p>
   `;
+}
+
+function renderKnowledgeIndexes(indexes = []) {
+  if (!knowledgeIndexList) return;
+  knowledgeIndexList.innerHTML = "";
+  const recordCount = indexes.reduce((total, index) => total + Number(index.records || 0), 0);
+  if (knowledgeRecordCount) knowledgeRecordCount.textContent = String(recordCount);
+  if (!indexes.length) {
+    knowledgeIndexList.append(emptyState("No index status", "The retrieval indexes have not reported yet."));
+    return;
+  }
+  indexes.forEach((index) => {
+    const item = document.createElement("div");
+    item.className = "entity-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(index.name)}</strong>
+        <p>${escapeHtml(index.description || "Knowledge retrieval index")}</p>
+      </div>
+      <span class="status-chip status-${escapeHtml(index.status)}">${escapeHtml(index.records)} records</span>
+    `;
+    knowledgeIndexList.append(item);
+  });
+}
+
+function renderKnowledgeRecentEvents(events = []) {
+  if (!knowledgeRecentList) return;
+  knowledgeRecentList.innerHTML = "";
+  if (!events.length) {
+    knowledgeRecentList.append(emptyState("No vault events", "Search, ingest, sync, and feedback events will appear here."));
+    return;
+  }
+  events.slice(0, 5).forEach((event) => {
+    const item = document.createElement("div");
+    item.className = "entity-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(event.message || event.type)}</strong>
+        <p>${escapeHtml(event.type)} - ${escapeHtml(formatDate(event.created_at))}</p>
+      </div>
+      <span class="status-chip ${event.type === "error" ? "status-error" : "status-enabled"}">${escapeHtml(event.type)}</span>
+    `;
+    knowledgeRecentList.append(item);
+  });
+}
+
+function renderAuditRuntimeEvents(events = []) {
+  if (!auditRuntimeList) return;
+  auditRuntimeList.innerHTML = "";
+  if (!events.length) {
+    auditRuntimeList.append(emptyListItem("No runtime events", "Vault operations will appear after activity."));
+    return;
+  }
+  events.slice(0, 20).forEach((event) => {
+    auditRuntimeList.append(
+      eventListItem({
+        type: event.type,
+        created_at: event.created_at,
+        message: event.message,
+        details: event.details,
+        success: event.type !== "error",
+      }),
+    );
+  });
 }
 
 function renderDashboardOpenIssue(snapshot) {
@@ -418,6 +521,30 @@ function emptyState(title, body) {
   const item = document.createElement("div");
   item.className = "empty-state";
   item.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>`;
+  return item;
+}
+
+function emptyListItem(title, body) {
+  const item = document.createElement("li");
+  item.className = "event-item empty-event";
+  item.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>`;
+  return item;
+}
+
+function eventListItem(event) {
+  const item = document.createElement("li");
+  item.className = "event-item";
+  item.innerHTML = `
+    <div class="event-row">
+      <span class="event-type">${escapeHtml(event.action || event.type || "event")}</span>
+      <time class="event-time">${escapeHtml(formatDate(event.created_at))}</time>
+    </div>
+    <div class="event-message">${escapeHtml(event.actor_name || event.message || "System")}</div>
+    <div class="event-details">${escapeHtml(formatDetails(event.detail || event.details || {}))}</div>
+  `;
+  if (event.success === false) {
+    item.classList.add("issue-card");
+  }
   return item;
 }
 
@@ -1009,6 +1136,7 @@ async function loadMesh(showConnection = true) {
 async function loadGithubSync() {
   try {
     const status = await api("/api/github-sync");
+    state.githubSync = status;
     githubSyncStatus.textContent = status.last_checked_at ? "Tracked" : "Ready";
     githubSyncStatus.className = `status-chip ${status.last_checked_at ? "status-enabled" : "status-standby"}`;
     syncLastChecked.textContent = formatDate(status.last_checked_at);
@@ -1046,7 +1174,10 @@ async function loadGithubSync() {
         </div>
       `;
     }
+    renderKnowledgeDailyUpdate(status);
+    renderKnowledgeSources();
   } catch (error) {
+    state.githubSync = null;
     githubSyncStatus.textContent = "Error";
     githubSyncStatus.className = "status-chip status-error";
     syncResult.innerHTML = "";
@@ -1059,6 +1190,7 @@ async function loadGithubSync() {
       dashboardIngestionList.innerHTML = "";
       dashboardIngestionList.append(emptyState("Could not load source inbox", error.message));
     }
+    renderKnowledgeSources(error);
   }
 }
 
@@ -1066,6 +1198,7 @@ async function loadObsidianSources() {
   if (!obsidianSourceStatus || !obsidianSourceList) return;
   try {
     const payload = await api("/api/sources?type=obsidian_vault");
+    state.obsidianSources = payload;
     const summary = payload.summary || {};
     const sources = payload.sources || [];
     const vaults = Number(summary.obsidian_vaults || 0);
@@ -1114,28 +1247,156 @@ async function loadObsidianSources() {
         dashboardIngestionList.append(item);
       });
     }
+    renderKnowledgeSources();
   } catch (error) {
+    state.obsidianSources = null;
     obsidianSourceStatus.textContent = "Error";
     obsidianSourceStatus.className = "status-chip status-error";
     obsidianSourceList.innerHTML = "";
     obsidianSourceList.append(emptyState("Could not load Obsidian sources", error.message));
+    renderKnowledgeSources(error);
   }
+}
+
+function renderKnowledgeDailyUpdate(status = state.githubSync) {
+  if (!knowledgeDailyUpdate || !knowledgeDigestStatus) return;
+  knowledgeDailyUpdate.innerHTML = "";
+  if (!status) {
+    knowledgeDigestStatus.textContent = "Waiting";
+    knowledgeDigestStatus.className = "status-chip status-standby";
+    knowledgeDailyUpdate.append(emptyState("No repository status", "Run or load source sync status."));
+    return;
+  }
+  const checked = Boolean(status.last_checked_at);
+  knowledgeDigestStatus.textContent = checked ? "Tracked" : "Ready";
+  knowledgeDigestStatus.className = `status-chip ${checked ? "status-enabled" : "status-standby"}`;
+  const rows = [
+    ["Organization", status.org || "masumi-network", checked ? "tracked" : "ready"],
+    ["Last digest", formatDate(status.last_digest_at || status.last_checked_at), "daily"],
+    ["Repositories", `${status.tracked_repositories || 0} tracked`, "source"],
+    ["Recent commits", `${status.tracked_commit_repositories || 0} repositories`, "context"],
+  ];
+  rows.forEach(([label, value, chip]) => {
+    const item = document.createElement("div");
+    item.className = "entity-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(label)}</strong>
+        <p>${escapeHtml(value)}</p>
+      </div>
+      <span class="status-chip ${checked ? "status-enabled" : "status-standby"}">${escapeHtml(chip)}</span>
+    `;
+    knowledgeDailyUpdate.append(item);
+  });
+}
+
+function renderKnowledgeSources(error = null) {
+  if (!knowledgeSourceList) return;
+  knowledgeSourceList.innerHTML = "";
+  if (error) {
+    knowledgeSourceList.append(emptyState("Could not load sources", error.message));
+    if (knowledgeStatus) {
+      knowledgeStatus.textContent = "Source error";
+      knowledgeStatus.className = "status-chip status-error";
+    }
+    return;
+  }
+
+  const github = state.githubSync;
+  const obsidianPayload = state.obsidianSources || {};
+  const obsidianSources = obsidianPayload.sources || [];
+  const summary = obsidianPayload.summary || {};
+  const sourceRows = [];
+  if (github) {
+    sourceRows.push({
+      name: `GitHub: ${github.org || "organization"}`,
+      body: `${github.tracked_repositories || 0} repositories - ${formatDate(github.last_checked_at)}`,
+      status: github.last_checked_at ? "tracked" : "ready",
+      error: false,
+    });
+  }
+  obsidianSources.forEach((source) => {
+    sourceRows.push({
+      name: source.name || "Obsidian vault",
+      body: `${source.documents || 0} notes - ${formatDate(source.last_push_at)}`,
+      status: source.open_conflicts ? "review" : "synced",
+      error: Boolean(source.open_conflicts),
+    });
+  });
+
+  const sourceCount = sourceRows.length;
+  const snapshotCount = Number(github?.tracked_repositories || 0) + Number(summary.obsidian_documents || 0);
+  const conflictCount = Number(summary.open_conflicts || 0);
+  if (knowledgeSourceCount) knowledgeSourceCount.textContent = String(sourceCount);
+  if (knowledgeSnapshotCount && !state.snapshot) knowledgeSnapshotCount.textContent = String(snapshotCount);
+  if (knowledgeConflictCount) knowledgeConflictCount.textContent = String(conflictCount);
+
+  if (!sourceRows.length) {
+    knowledgeSourceList.append(emptyState("No connected sources", "GitHub and Obsidian sources will appear here."));
+    return;
+  }
+
+  sourceRows.forEach((source) => {
+    const item = document.createElement("div");
+    item.className = "entity-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(source.name)}</strong>
+        <p>${escapeHtml(source.body)}</p>
+      </div>
+      <span class="status-chip ${source.error ? "status-error" : "status-enabled"}">${escapeHtml(source.status)}</span>
+    `;
+    knowledgeSourceList.append(item);
+  });
 }
 
 async function loadAccess() {
   if (!canUse("admin")) return;
   accessTokenStatus.textContent = "Loading";
   accessTokenStatus.className = "status-chip status-standby";
+  if (agentsStatus) {
+    agentsStatus.textContent = "Loading";
+    agentsStatus.className = "status-chip status-standby";
+  }
+  if (auditStatus) {
+    auditStatus.textContent = "Loading";
+    auditStatus.className = "status-chip status-standby";
+  }
   try {
     const snapshot = await api("/api/access");
+    state.accessSnapshot = snapshot;
     renderAccess(snapshot);
     accessTokenStatus.textContent = "Ready";
     accessTokenStatus.className = "status-chip status-enabled";
+    if (agentsStatus) {
+      agentsStatus.textContent = "Ready";
+      agentsStatus.className = "status-chip status-enabled";
+    }
+    if (auditStatus) {
+      auditStatus.textContent = "Ready";
+      auditStatus.className = "status-chip status-enabled";
+    }
   } catch (error) {
     accessTokenStatus.textContent = "Error";
     accessTokenStatus.className = "status-chip status-error";
+    if (agentsStatus) {
+      agentsStatus.textContent = "Error";
+      agentsStatus.className = "status-chip status-error";
+    }
+    if (auditStatus) {
+      auditStatus.textContent = "Error";
+      auditStatus.className = "status-chip status-error";
+    }
     accessPrincipalList.innerHTML = "";
     accessPrincipalList.append(emptyState("Could not load access", error.message));
+    if (agentsTokenList) {
+      agentsTokenList.innerHTML = "";
+      agentsTokenList.append(emptyState("Could not load agents", error.message));
+    }
+    if (auditAccessList) {
+      auditAccessList.innerHTML = "";
+      auditAccessList.append(emptyListItem("Could not load audit", error.message));
+    }
   }
 }
 
@@ -1144,6 +1405,8 @@ function renderAccess(snapshot) {
   accessTokenList.innerHTML = "";
   accessAuditList.innerHTML = "";
   renderDashboardMcpAccess(snapshot);
+  renderAgents(snapshot);
+  renderAuditAccessEvents(snapshot.audit_events || []);
 
   if (!snapshot.principals?.length) {
     accessPrincipalList.append(
@@ -1193,24 +1456,139 @@ function renderAccess(snapshot) {
 
   const events = snapshot.audit_events || [];
   events.slice(-12).reverse().forEach((event) => {
-    const item = document.createElement("li");
-    item.className = "event-item";
-    item.innerHTML = `
-      <div class="event-row">
-        <span class="event-type">${escapeHtml(event.action)}</span>
-        <time class="event-time">${escapeHtml(formatDate(event.created_at))}</time>
-      </div>
-      <div class="event-message">${escapeHtml(event.actor_name || "System")}</div>
-      <div class="event-details">${escapeHtml(formatDetails(event.detail || {}))}</div>
-    `;
-    accessAuditList.append(item);
+    accessAuditList.append(eventListItem(event));
   });
   if (!events.length) {
-    const empty = document.createElement("li");
-    empty.className = "event-item empty-event";
-    empty.innerHTML = "<strong>No audit events</strong><p>Create or revoke a token to start the trail.</p>";
-    accessAuditList.append(empty);
+    accessAuditList.append(emptyListItem("No audit events", "Create or revoke a token to start the trail."));
   }
+}
+
+function renderAgents(snapshot) {
+  if (!agentsTokenList) return;
+  agentsTokenList.innerHTML = "";
+  const principalsById = new Map((snapshot.principals || []).map((principal) => [principal.id, principal]));
+  const agentTokens = (snapshot.tokens || []).filter((token) => {
+    const principal = principalsById.get(token.principal_id);
+    return principal?.kind === "service_account";
+  });
+  const activeAgentTokens = agentTokens.filter((token) => !token.revoked_at);
+  if (agentsStatus) {
+    agentsStatus.textContent = `${activeAgentTokens.length} active`;
+    agentsStatus.className = `status-chip ${activeAgentTokens.length ? "status-enabled" : "status-standby"}`;
+  }
+  if (!agentTokens.length) {
+    agentsTokenList.append(emptyState("No service-account tokens", "Create an autonomous agent token from Access."));
+    return;
+  }
+  agentTokens.forEach((token) => {
+    const principal = principalsById.get(token.principal_id);
+    const revoked = Boolean(token.revoked_at);
+    const item = document.createElement("div");
+    item.className = "entity-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(token.name)}</strong>
+        <p>${escapeHtml(roleLabel(token.role))} - ${escapeHtml(principal?.team_id || token.team_id || "default")}</p>
+        <p>${escapeHtml((token.scopes || []).join(", "))}</p>
+      </div>
+      <span class="status-chip ${revoked ? "status-error" : "status-enabled"}">${escapeHtml(revoked ? "revoked" : token.prefix + "...")}</span>
+    `;
+    agentsTokenList.append(item);
+  });
+}
+
+function renderAuditAccessEvents(events = []) {
+  if (!auditAccessList) return;
+  auditAccessList.innerHTML = "";
+  if (!events.length) {
+    auditAccessList.append(emptyListItem("No access events", "Admin and agent actions will appear here."));
+    return;
+  }
+  events.slice(-30).reverse().forEach((event) => {
+    auditAccessList.append(eventListItem(event));
+  });
+}
+
+async function loadSettings() {
+  if (!canUse("admin") || !settingsHealthGrid) return;
+  settingsStatus.textContent = "Loading";
+  settingsStatus.className = "status-chip status-standby";
+  settingsHealthGrid.innerHTML = `
+    <div class="skeleton index-skeleton"></div>
+    <div class="skeleton index-skeleton"></div>
+    <div class="skeleton index-skeleton"></div>
+  `;
+  try {
+    const [ready, learning] = await Promise.all([api("/readyz"), api("/api/learning-agent")]);
+    state.settingsSnapshot = { ready, learning };
+    renderSettings(state.settingsSnapshot);
+    settingsStatus.textContent = "Ready";
+    settingsStatus.className = "status-chip status-enabled";
+  } catch (error) {
+    settingsStatus.textContent = "Error";
+    settingsStatus.className = "status-chip status-error";
+    settingsHealthGrid.innerHTML = "";
+    settingsHealthGrid.append(emptyState("Could not load settings", error.message));
+  }
+}
+
+function renderSettings(snapshot) {
+  if (!settingsHealthGrid) return;
+  const ready = snapshot.ready || {};
+  const learning = snapshot.learning || {};
+  const github = learning.sources?.github || {};
+  const rows = [
+    {
+      name: "HTTP service",
+      body: `${ready.service || "citadel"} - tenant ${ready.tenant_id || "default"}`,
+      status: ready.ok ? "ready" : "error",
+      error: !ready.ok,
+    },
+    {
+      name: "Default dataset",
+      body: ready.default_dataset || "unset",
+      status: "config",
+      error: false,
+    },
+    {
+      name: "Auto improvement",
+      body: ready.auto_improve ? "Enabled after accepted ingest" : "Manual improvement",
+      status: ready.auto_improve ? "enabled" : "manual",
+      error: false,
+    },
+    {
+      name: "Global context index",
+      body: ready.build_global_context_index ? "Enabled" : "Disabled",
+      status: ready.build_global_context_index ? "enabled" : "off",
+      error: !ready.build_global_context_index,
+    },
+    {
+      name: "Learning agent",
+      body: `${(learning.capabilities || []).join(", ") || "status loaded"}`,
+      status: learning.ok ? "ready" : "error",
+      error: !learning.ok,
+    },
+    {
+      name: "GitHub source",
+      body: `${github.org || "masumi-network"} - ${github.tracked_repositories || 0} repositories`,
+      status: github.last_checked_at ? "tracked" : "ready",
+      error: false,
+    },
+  ];
+
+  settingsHealthGrid.innerHTML = "";
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "entity-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(row.name)}</strong>
+        <p>${escapeHtml(row.body)}</p>
+      </div>
+      <span class="status-chip ${row.error ? "status-error" : "status-enabled"}">${escapeHtml(row.status)}</span>
+    `;
+    settingsHealthGrid.append(item);
+  });
 }
 
 function renderDashboardMcpAccess(snapshot) {
@@ -1282,6 +1660,10 @@ document.getElementById("refreshButton").addEventListener("click", () => {
   loadMesh();
   loadGithubSync();
   loadObsidianSources();
+  if (canUse("admin")) {
+    loadAccess();
+    loadSettings();
+  }
 });
 document.getElementById("meshRetryButton").addEventListener("click", () => loadMesh());
 document.getElementById("fitButton").addEventListener("click", () => {
@@ -1677,6 +2059,7 @@ loadSession().then(() => {
   loadObsidianSources();
   if (canUse("admin")) {
     loadAccess();
+    loadSettings();
   }
   connectEvents();
   animateGraph();

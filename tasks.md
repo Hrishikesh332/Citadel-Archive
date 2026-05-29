@@ -93,6 +93,16 @@
   - prompts for answer-from-KB, ingest decision, and source-change summaries
   - HTTP bearer tokens reuse Citadel reader/writer/admin access roles
   - project `.mcp.json` added with `CITADEL_MCP_ACCESS_TOKEN` env expansion
+- Organization Vault dashboard build started:
+  - added Knowledge, Agents, Audit, and Settings workspace pages
+  - made Search the default reader page when no hash route is selected
+  - surfaced repository daily update, source snapshot, index, and runtime event state
+  - surfaced service-account tokens, MCP setup snippets, and role/tool matrix
+  - surfaced access audit and runtime activity side by side
+  - surfaced readiness and learning-agent runtime checks
+  - reduced duplicate dashboard navigation chrome and made mobile content-first
+  - rewrote the overview header around current vault state and primary actions
+  - tests passing locally: `30 passed`
 
 ## Current Railway State
 
@@ -197,29 +207,15 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## Next: Dashboard
 
-- Add OS-style pages:
-  - Knowledge
-  - Agents
-  - Audit
-  - Settings
-- Make Search the default reader page.
+- Continue OS-style page deepening:
+  - add richer Knowledge document/source drilldowns
+  - add a first-class Agent tool-call audit table
+  - add editable Settings controls after backend policy modules exist
 - Make Sources/Ingest the default writer workspace.
 - Make Home/Access/Agents/Audit the admin workspace.
-- Add Agents page:
-  - Claude Code MCP setup snippet
-  - Codex MCP/plugin setup snippet
-  - service account token list
-  - tool/scopes matrix
-- Add Audit page:
-  - search events
-  - ingest events
-  - MCP tool calls
-  - source sync/admin actions
-- Add Settings page:
-  - model/provider state
-  - source retention
-  - Vault Backup Mirror controls
-  - health/config checks
+- Add MCP tool-call persistence so Audit can show real MCP calls.
+- Add model/provider state once the server exposes it safely.
+- Add Vault Backup Mirror controls after the mirror module exists.
 
 ## Later
 

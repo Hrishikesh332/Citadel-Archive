@@ -21,13 +21,23 @@
 
         <nav class="system-tabs" aria-label="Primary pages">
           <button class="nav-link" data-page-target="overview" type="button">Graph</button>
+          <button class="nav-link" data-page-target="knowledge" type="button">Knowledge</button>
           <button class="nav-link" data-page-target="search" type="button">Search</button>
           <button class="nav-link" data-page-target="ingest" data-min-role="writer" type="button">
             New note
           </button>
           <button class="nav-link" data-page-target="sources" type="button">Sources</button>
+          <button class="nav-link" data-page-target="agents" data-min-role="admin" type="button">
+            Agents
+          </button>
+          <button class="nav-link" data-page-target="audit" data-min-role="admin" type="button">
+            Audit
+          </button>
           <button class="nav-link" data-page-target="access" data-min-role="admin" type="button">
             Access
+          </button>
+          <button class="nav-link" data-page-target="settings" data-min-role="admin" type="button">
+            Settings
           </button>
         </nav>
 
@@ -45,6 +55,7 @@
         <aside class="sidebar" aria-label="Workspace navigation">
           <nav class="vault-ribbon" aria-label="Quick commands">
             <button class="ribbon-button" data-page-target="overview" aria-label="Open graph view" type="button">G</button>
+            <button class="ribbon-button" data-page-target="knowledge" aria-label="Open knowledge view" type="button">K</button>
             <button class="ribbon-button" data-page-target="search" aria-label="Search vault" type="button">S</button>
             <button
               class="ribbon-button"
@@ -58,12 +69,39 @@
             <button class="ribbon-button" data-page-target="sources" aria-label="Open sources" type="button">R</button>
             <button
               class="ribbon-button"
+              data-page-target="agents"
+              data-min-role="admin"
+              aria-label="Open agent access"
+              type="button"
+            >
+              M
+            </button>
+            <button
+              class="ribbon-button"
+              data-page-target="audit"
+              data-min-role="admin"
+              aria-label="Open audit trail"
+              type="button"
+            >
+              L
+            </button>
+            <button
+              class="ribbon-button"
               data-page-target="access"
               data-min-role="admin"
               aria-label="Open access settings"
               type="button"
             >
               A
+            </button>
+            <button
+              class="ribbon-button"
+              data-page-target="settings"
+              data-min-role="admin"
+              aria-label="Open settings"
+              type="button"
+            >
+              C
             </button>
           </nav>
 
@@ -81,17 +119,27 @@
             <nav class="system-map" aria-label="Workspace pages">
               <div class="vault-section-label">Files</div>
               <button class="nav-link" data-page-target="overview" type="button">00 Graph overview</button>
-              <button class="nav-link" data-page-target="search" type="button">01 Vault search</button>
+              <button class="nav-link" data-page-target="knowledge" type="button">01 Knowledge</button>
+              <button class="nav-link" data-page-target="search" type="button">02 Vault search</button>
               <button class="nav-link" data-page-target="ingest" data-min-role="writer" type="button">
-                02 New memory
+                03 New memory
               </button>
               <button class="nav-link" data-page-target="feedback" data-min-role="writer" type="button">
-                03 Feedback notes
+                04 Feedback notes
               </button>
-              <button class="nav-link" data-page-target="sources" type="button">04 Sources</button>
-              <button class="nav-link" data-page-target="events" type="button">05 Activity log</button>
+              <button class="nav-link" data-page-target="sources" type="button">05 Sources</button>
+              <button class="nav-link" data-page-target="events" type="button">06 Activity log</button>
+              <button class="nav-link" data-page-target="agents" data-min-role="admin" type="button">
+                07 Agents
+              </button>
+              <button class="nav-link" data-page-target="audit" data-min-role="admin" type="button">
+                08 Audit
+              </button>
               <button class="nav-link" data-page-target="access" data-min-role="admin" type="button">
-                06 Access keys
+                09 Access keys
+              </button>
+              <button class="nav-link" data-page-target="settings" data-min-role="admin" type="button">
+                10 Settings
               </button>
             </nav>
 
@@ -126,6 +174,7 @@
             <section class="rail-card vault-links" aria-label="Pinned vault links">
               <div class="vault-section-label">Pinned</div>
               <a href="#overview">[[Architecture graph]]</a>
+              <a href="#knowledge">[[Repository daily updates]]</a>
               <a href="#sources">[[Repository digest]]</a>
               <a href="#access">[[Agent access]]</a>
             </section>
@@ -136,16 +185,24 @@
           <section class="page page-active dashboard-page" data-page="overview" aria-labelledby="overviewTitle">
             <div class="dashboard-hero">
               <div>
-                <p class="eyebrow">Global graph</p>
-                <h2 id="overviewTitle">Shared knowledge vault</h2>
+                <p class="eyebrow">Vault overview</p>
+                <h2 id="overviewTitle">Current vault state</h2>
                 <p class="dashboard-copy">
-                  Source digests, decisions, feedback, and agent notes resolve into one linked
-                  memory space for the Masumi team.
+                  Monitor source freshness, retrieval health, and agent access before searching
+                  or syncing the Organization Vault.
                 </p>
               </div>
               <div class="hero-actions">
                 <span id="runtimeStatus" class="status-chip status-standby">Booting</span>
-                <button class="secondary-button" data-page-target="sources" type="button">Open sources</button>
+                <button class="secondary-button" data-page-target="search" type="button">
+                  Search vault
+                </button>
+                <button class="secondary-button" data-page-target="sources" type="button">
+                  Source sync
+                </button>
+                <button class="secondary-button" data-page-target="ingest" data-min-role="writer" type="button">
+                  New note
+                </button>
                 <button class="primary-button inline-primary" data-page-target="access" data-min-role="admin" type="button">
                   Share access
                 </button>
@@ -226,6 +283,9 @@
                       <span class="status-chip">Pending</span>
                     </div>
                   </div>
+                  <button class="secondary-button" data-page-target="sources" type="button">
+                    Review sources
+                  </button>
                 </section>
 
                 <section class="window action-panel dashboard-card">
@@ -245,6 +305,9 @@
                       <span class="status-chip">Checking</span>
                     </div>
                   </div>
+                  <button class="secondary-button" data-page-target="agents" data-min-role="admin" type="button">
+                    Manage agents
+                  </button>
                 </section>
               </aside>
             </div>
@@ -284,6 +347,85 @@
                 </div>
               </article>
             </section>
+          </section>
+
+          <section class="page" data-page="knowledge" aria-labelledby="knowledgeTitle" hidden>
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">Knowledge</p>
+                <h2 id="knowledgeTitle">Structured Knowledge</h2>
+              </div>
+              <span id="knowledgeStatus" class="status-chip">Loading</span>
+            </div>
+            <section class="metrics-window dashboard-metrics" aria-label="Knowledge status">
+              <dl class="stats dashboard-stats">
+                <div><dt>Sources</dt><dd id="knowledgeSourceCount">0</dd><span>connected feeds</span></div>
+                <div><dt>Snapshots</dt><dd id="knowledgeSnapshotCount">0</dd><span>retained notes</span></div>
+                <div><dt>Conflicts</dt><dd id="knowledgeConflictCount">0</dd><span>open reviews</span></div>
+                <div><dt>Index records</dt><dd id="knowledgeRecordCount">0</dd><span>retrieval map</span></div>
+              </dl>
+            </section>
+            <div class="knowledge-grid">
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Repository Daily Update</h2>
+                    <p class="panel-kicker">Source-linked activity</p>
+                  </div>
+                  <span id="knowledgeDigestStatus" class="status-chip">Waiting</span>
+                </div>
+                <div id="knowledgeDailyUpdate" class="entity-list" aria-live="polite">
+                  <div class="empty-state compact-empty">
+                    <strong>Checking repository digest</strong>
+                    <p>Source state has not loaded yet.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Source Snapshots</h2>
+                    <p class="panel-kicker">GitHub and Obsidian</p>
+                  </div>
+                </div>
+                <div id="knowledgeSourceList" class="entity-list" aria-live="polite">
+                  <div class="empty-state compact-empty">
+                    <strong>Loading sources</strong>
+                    <p>Connected source status will appear here.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Knowledge Index</h2>
+                    <p class="panel-kicker">Search and mesh state</p>
+                  </div>
+                </div>
+                <div id="knowledgeIndexList" class="entity-list" aria-live="polite">
+                  <div class="skeleton index-skeleton"></div>
+                  <div class="skeleton index-skeleton"></div>
+                  <div class="skeleton index-skeleton"></div>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Recent Vault Events</h2>
+                    <p class="panel-kicker">Search, ingest, feedback, sync</p>
+                  </div>
+                </div>
+                <div id="knowledgeRecentList" class="entity-list" aria-live="polite">
+                  <div class="empty-state compact-empty">
+                    <strong>No events yet</strong>
+                    <p>Vault activity will appear after the first operation.</p>
+                  </div>
+                </div>
+              </section>
+            </div>
           </section>
 
           <section class="page" data-page="search" aria-labelledby="searchTitle" hidden>
@@ -711,6 +853,217 @@
               </div>
               <ol id="accessAuditList" class="event-list"></ol>
             </section>
+          </section>
+
+          <section
+            class="page"
+            data-page="agents"
+            data-min-role="admin"
+            aria-labelledby="agentsTitle"
+            hidden
+          >
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">Admin</p>
+                <h2 id="agentsTitle">Agent Access</h2>
+              </div>
+              <span id="agentsStatus" class="status-chip">Loading</span>
+            </div>
+            <div class="agents-grid">
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Service Accounts</h2>
+                    <p class="panel-kicker">Agent identities and MCP tokens</p>
+                  </div>
+                  <button class="secondary-button compact-button" data-page-target="access" type="button">
+                    Manage
+                  </button>
+                </div>
+                <div id="agentsTokenList" class="entity-list" aria-live="polite">
+                  <div class="empty-state compact-empty">
+                    <strong>Loading agent tokens</strong>
+                    <p>Active service accounts will appear here.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>MCP Client Setup</h2>
+                    <p class="panel-kicker">Claude Code and Codex</p>
+                  </div>
+                </div>
+                <div class="setup-snippet-list">
+                  <article class="setup-snippet">
+                    <div class="event-row">
+                      <strong>Codex</strong>
+                      <span class="status-chip">stdio</span>
+                    </div>
+                    <pre><code>{
+  "mcpServers": {
+    "citadel": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "kb.mcp_server"],
+      "env": {
+        "CITADEL_BASE_URL": "https://citadel-archive-production.up.railway.app",
+        "CITADEL_MCP_ACCESS_TOKEN": "ctdl_..."
+      }
+    }
+  }
+}</code></pre>
+                  </article>
+                  <article class="setup-snippet">
+                    <div class="event-row">
+                      <strong>Claude Code</strong>
+                      <span class="status-chip">project</span>
+                    </div>
+                    <pre><code>uv run python -m kb.mcp_server</code></pre>
+                  </article>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Tool Matrix</h2>
+                    <p class="panel-kicker">Role-gated vault actions</p>
+                  </div>
+                </div>
+                <div id="agentsToolMatrix" class="tool-matrix" aria-live="polite">
+                  <div class="tool-row"><span>Search</span><span>Reader</span><span class="status-chip status-enabled">open</span></div>
+                  <div class="tool-row"><span>Ingest</span><span>Writer</span><span class="status-chip status-enabled">role</span></div>
+                  <div class="tool-row"><span>Feedback</span><span>Writer</span><span class="status-chip status-enabled">role</span></div>
+                  <div class="tool-row"><span>Learning agent</span><span>Admin</span><span class="status-chip status-standby">approval</span></div>
+                  <div class="tool-row"><span>Improve</span><span>Admin</span><span class="status-chip status-standby">approval</span></div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section
+            class="page"
+            data-page="audit"
+            data-min-role="admin"
+            aria-labelledby="auditTitle"
+            hidden
+          >
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">Admin</p>
+                <h2 id="auditTitle">Audit Trail</h2>
+              </div>
+              <span id="auditStatus" class="status-chip">Loading</span>
+            </div>
+            <div class="audit-grid">
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Agent And Access Actions</h2>
+                    <p class="panel-kicker">Tokens, sync, learning, conflicts</p>
+                  </div>
+                </div>
+                <ol id="auditAccessList" class="event-list" aria-live="polite"></ol>
+              </section>
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Runtime Activity</h2>
+                    <p class="panel-kicker">Recent vault operations</p>
+                  </div>
+                </div>
+                <ol id="auditRuntimeList" class="event-list" aria-live="polite"></ol>
+              </section>
+            </div>
+          </section>
+
+          <section
+            class="page"
+            data-page="settings"
+            data-min-role="admin"
+            aria-labelledby="settingsTitle"
+            hidden
+          >
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">Admin</p>
+                <h2 id="settingsTitle">Vault Settings</h2>
+              </div>
+              <span id="settingsStatus" class="status-chip">Loading</span>
+            </div>
+            <div class="settings-grid">
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Runtime Checks</h2>
+                    <p class="panel-kicker">Service and retrieval configuration</p>
+                  </div>
+                </div>
+                <div id="settingsHealthGrid" class="settings-grid-list" aria-live="polite">
+                  <div class="skeleton index-skeleton"></div>
+                  <div class="skeleton index-skeleton"></div>
+                  <div class="skeleton index-skeleton"></div>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Source Retention</h2>
+                    <p class="panel-kicker">Phase 1 policy</p>
+                  </div>
+                </div>
+                <div id="settingsPolicyList" class="entity-list">
+                  <div class="entity-item">
+                    <div>
+                      <strong>Latest normalized snapshot</strong>
+                      <p>Keep enough source evidence to cite, audit, and rebuild.</p>
+                    </div>
+                    <span class="status-chip status-enabled">active</span>
+                  </div>
+                  <div class="entity-item">
+                    <div>
+                      <strong>Historical point-in-time records</strong>
+                      <p>Retain daily digests, decisions, audit events, and conflicts.</p>
+                    </div>
+                    <span class="status-chip status-enabled">active</span>
+                  </div>
+                  <div class="entity-item">
+                    <div>
+                      <strong>Secrets and generated databases</strong>
+                      <p>Exclude credentials, embeddings, vector indexes, and graph stores.</p>
+                    </div>
+                    <span class="status-chip status-standby">blocked</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="window action-panel">
+                <div class="window-titlebar">
+                  <div>
+                    <h2>Vault Backup Mirror</h2>
+                    <p class="panel-kicker">Private GitHub mirror target</p>
+                  </div>
+                </div>
+                <div id="settingsMirrorList" class="entity-list">
+                  <div class="entity-item">
+                    <div>
+                      <strong>Mirror module</strong>
+                      <p>Not implemented in this build slice.</p>
+                    </div>
+                    <span class="status-chip status-standby">planned</span>
+                  </div>
+                  <div class="entity-item">
+                    <div>
+                      <strong>Text-first export</strong>
+                      <p>Markdown, JSONL, manifests, hashes, actors, timestamps.</p>
+                    </div>
+                    <span class="status-chip status-standby">planned</span>
+                  </div>
+                </div>
+              </section>
+            </div>
           </section>
 
           <section class="page" data-page="events" aria-labelledby="eventsTitle" hidden>

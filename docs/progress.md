@@ -1,6 +1,26 @@
 # Citadel Progress
 
-Last updated: 2026-05-28.
+Last updated: 2026-05-29.
+
+## 2026-05-29
+
+- Checked the Organization Vault plan against the local implementation state.
+- Started the next dashboard build slice:
+  - added Knowledge, Agents, Audit, and Settings workspace pages
+  - added reader default routing to Search when no page hash is present
+  - wired Knowledge to source, index, digest, and runtime event state
+  - wired Agents to service-account access tokens and MCP setup snippets
+  - wired Audit to access audit events and runtime vault events
+  - wired Settings to readiness and learning-agent status
+- Verified static JavaScript syntax with `node --check kb/static/app.js`.
+- Verified backend and API behavior with `uv run pytest`.
+- Improved dashboard UX:
+  - reduced duplicated navigation chrome to a compact workspace ribbon
+  - made mobile pages content-first by hiding the sidebar
+  - rewrote the dashboard header around current vault state and primary actions
+  - added direct dashboard actions for search, source sync, note creation, access,
+    source review, and agent management
+  - browser-checked desktop and mobile dashboard rendering
 
 ## 2026-05-28
 

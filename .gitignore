@@ -19,3 +19,4 @@ build/
 .data_storage/
 .cognee_cache/
 logs/
+.brand-preview/
