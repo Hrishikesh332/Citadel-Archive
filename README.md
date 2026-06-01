@@ -344,10 +344,12 @@ Recommended first deployment shape:
 - One Railway volume mounted at `/data` for Cognee's local Kuzu graph files.
 - Cognee provider variables set on the web service through Railway variables.
 
-Use Railway's private Postgres `DATABASE_URL` as the app database binding. If
-your Cognee version expects split database variables instead of `DATABASE_URL`,
-map Railway's `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`
-values into the corresponding Cognee variables.
+Use Railway's private Postgres `DATABASE_URL` as the app database binding. At
+runtime Citadel derives Cognee's split `DB_*` settings from `DATABASE_URL` when
+needed, and maps `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and
+`DB_PASSWORD` into `VECTOR_DB_*` when `VECTOR_DB_PROVIDER=pgvector`. Set
+explicit `VECTOR_DB_*` variables only when the vector store uses a different
+Postgres target.
 
 For the graph/mesh store, v1 uses Cognee's embedded Kuzu backend on the Railway
 volume:

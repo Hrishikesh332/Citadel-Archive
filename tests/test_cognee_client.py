@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -7,6 +8,32 @@ from typing import Any
 import pytest
 
 from kb.cognee_client import CogneePublicClient
+
+
+COGNEE_ENV_KEYS = (
+    "DB_PROVIDER",
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USERNAME",
+    "DB_PASSWORD",
+    "VECTOR_DB_HOST",
+    "VECTOR_DB_PORT",
+    "VECTOR_DB_NAME",
+    "VECTOR_DB_USERNAME",
+    "VECTOR_DB_PASSWORD",
+    "GRAPH_DATABASE_HOST",
+    "GRAPH_DATABASE_PORT",
+    "GRAPH_DATABASE_NAME",
+    "GRAPH_DATABASE_USERNAME",
+    "GRAPH_DATABASE_PASSWORD",
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_derived_cognee_env(monkeypatch: Any) -> None:
+    for key in COGNEE_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.mark.asyncio
@@ -103,3 +130,71 @@ async def test_cognee_public_client_does_not_pass_external_metadata_keyword(
         "dataset_name": "notes",
         "session_id": None,
     }
+
+
+def test_cognee_public_client_derives_db_env_from_database_url(monkeypatch: Any) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://db_user:db%23pass@db.example:6543/citadel")
+    monkeypatch.setenv("VECTOR_DB_PROVIDER", "pgvector")
+    for key in (
+        "DB_PROVIDER",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_NAME",
+        "DB_USERNAME",
+        "DB_PASSWORD",
+        "VECTOR_DB_HOST",
+        "VECTOR_DB_PORT",
+        "VECTOR_DB_NAME",
+        "VECTOR_DB_USERNAME",
+        "VECTOR_DB_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    CogneePublicClient()._prepare_cognee_environment()
+
+    assert os.environ["DB_PROVIDER"] == "postgres"
+    assert os.environ["DB_HOST"] == "db.example"
+    assert os.environ["DB_PORT"] == "6543"
+    assert os.environ["DB_NAME"] == "citadel"
+    assert os.environ["DB_USERNAME"] == "db_user"
+    assert os.environ["DB_PASSWORD"] == "db#pass"
+    assert os.environ["VECTOR_DB_HOST"] == "db.example"
+    assert os.environ["VECTOR_DB_PORT"] == "6543"
+    assert os.environ["VECTOR_DB_NAME"] == "citadel"
+    assert os.environ["VECTOR_DB_USERNAME"] == "db_user"
+    assert os.environ["VECTOR_DB_PASSWORD"] == "db#pass"
+
+
+def test_cognee_public_client_preserves_explicit_vector_db_env(monkeypatch: Any) -> None:
+    monkeypatch.setenv("DB_HOST", "relational.example")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "railway")
+    monkeypatch.setenv("DB_USERNAME", "postgres")
+    monkeypatch.setenv("DB_PASSWORD", "secret")
+    monkeypatch.setenv("VECTOR_DB_PROVIDER", "pgvector")
+    monkeypatch.setenv("VECTOR_DB_HOST", "vector.example")
+
+    CogneePublicClient()._prepare_cognee_environment()
+
+    assert os.environ["VECTOR_DB_HOST"] == "vector.example"
+    assert os.environ["VECTOR_DB_PORT"] == "5432"
+    assert os.environ["VECTOR_DB_NAME"] == "railway"
+    assert os.environ["VECTOR_DB_USERNAME"] == "postgres"
+    assert os.environ["VECTOR_DB_PASSWORD"] == "secret"
+
+
+def test_cognee_public_client_derives_postgres_graph_env(monkeypatch: Any) -> None:
+    monkeypatch.setenv("DB_HOST", "postgres.example")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "railway")
+    monkeypatch.setenv("DB_USERNAME", "postgres")
+    monkeypatch.setenv("DB_PASSWORD", "secret")
+    monkeypatch.setenv("GRAPH_DATABASE_PROVIDER", "postgres")
+
+    CogneePublicClient()._prepare_cognee_environment()
+
+    assert os.environ["GRAPH_DATABASE_HOST"] == "postgres.example"
+    assert os.environ["GRAPH_DATABASE_PORT"] == "5432"
+    assert os.environ["GRAPH_DATABASE_NAME"] == "railway"
+    assert os.environ["GRAPH_DATABASE_USERNAME"] == "postgres"
+    assert os.environ["GRAPH_DATABASE_PASSWORD"] == "secret"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Protocol
+from urllib.parse import unquote, urlparse
 
 
 class CogneeGateway(Protocol):
@@ -49,9 +50,58 @@ class CogneePublicClient:
     def __init__(self) -> None:
         self._startup_migrations_done = False
 
+    def _copy_env_if_missing(self, target: str, *sources: str) -> None:
+        if os.getenv(target):
+            return
+        for source in sources:
+            value = os.getenv(source)
+            if value:
+                os.environ[target] = value
+                return
+
+    def _derive_db_env_from_database_url(self) -> None:
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            return
+        parsed = urlparse(database_url)
+        if parsed.scheme not in {"postgres", "postgresql"}:
+            return
+
+        os.environ.setdefault("DB_PROVIDER", "postgres")
+        if parsed.hostname:
+            os.environ.setdefault("DB_HOST", parsed.hostname)
+        if parsed.port:
+            os.environ.setdefault("DB_PORT", str(parsed.port))
+        if parsed.path and parsed.path != "/":
+            os.environ.setdefault("DB_NAME", unquote(parsed.path.lstrip("/")))
+        if parsed.username:
+            os.environ.setdefault("DB_USERNAME", unquote(parsed.username))
+        if parsed.password:
+            os.environ.setdefault("DB_PASSWORD", unquote(parsed.password))
+
+    def _ensure_cognee_database_env(self) -> None:
+        self._derive_db_env_from_database_url()
+        if os.getenv("VECTOR_DB_PROVIDER", "").lower() == "pgvector":
+            self._copy_env_if_missing("VECTOR_DB_HOST", "DB_HOST")
+            self._copy_env_if_missing("VECTOR_DB_PORT", "DB_PORT")
+            self._copy_env_if_missing("VECTOR_DB_NAME", "DB_NAME")
+            self._copy_env_if_missing("VECTOR_DB_USERNAME", "DB_USERNAME")
+            self._copy_env_if_missing("VECTOR_DB_PASSWORD", "DB_PASSWORD")
+
+        if os.getenv("GRAPH_DATABASE_PROVIDER", "").lower() == "postgres":
+            self._copy_env_if_missing("GRAPH_DATABASE_HOST", "DB_HOST")
+            self._copy_env_if_missing("GRAPH_DATABASE_PORT", "DB_PORT")
+            self._copy_env_if_missing("GRAPH_DATABASE_NAME", "DB_NAME")
+            self._copy_env_if_missing("GRAPH_DATABASE_USERNAME", "DB_USERNAME")
+            self._copy_env_if_missing("GRAPH_DATABASE_PASSWORD", "DB_PASSWORD")
+
     def _ensure_llm_api_key(self) -> None:
         if not os.getenv("LLM_API_KEY") and os.getenv("OPENROUTER_API_KEY"):
             os.environ["LLM_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
+
+    def _prepare_cognee_environment(self) -> None:
+        self._ensure_llm_api_key()
+        self._ensure_cognee_database_env()
 
     async def _create_cognee_database(self) -> None:
         from cognee.infrastructure.databases.relational import get_relational_engine
@@ -102,7 +152,7 @@ class CogneePublicClient:
         session_id: str | None = None,
         tags: tuple[str, ...] = (),
     ) -> Any:
-        self._ensure_llm_api_key()
+        self._prepare_cognee_environment()
         import cognee
 
         await self._ensure_cognee_ready(cognee)
@@ -132,7 +182,7 @@ class CogneePublicClient:
         session_id: str | None = None,
         top_k: int = 10,
     ) -> list[Any]:
-        self._ensure_llm_api_key()
+        self._prepare_cognee_environment()
         import cognee
 
         await self._ensure_cognee_ready(cognee)
@@ -158,7 +208,7 @@ class CogneePublicClient:
         score: int | None,
         text: str | None,
     ) -> bool:
-        self._ensure_llm_api_key()
+        self._prepare_cognee_environment()
         import cognee
 
         await self._ensure_cognee_ready(cognee)
@@ -176,7 +226,7 @@ class CogneePublicClient:
         session_ids: list[str] | None = None,
         build_global_context_index: bool = False,
     ) -> Any:
-        self._ensure_llm_api_key()
+        self._prepare_cognee_environment()
         import cognee
 
         await self._ensure_cognee_ready(cognee)
