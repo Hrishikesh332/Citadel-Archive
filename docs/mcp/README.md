@@ -1,47 +1,422 @@
-# Citadel MCP Client Setup
+# Citadel Archive — Integration Guide
 
-Use these files when you want to connect Claude Code or Codex to the hosted
-Citadel Archive with one copied config block.
+This guide covers how to connect any MCP-capable coding agent to the Citadel
+Organization Vault.
+
+**Table of contents:**
+
+- [Prerequisites](#prerequisites)
+- [Claude Code](#claude-code)
+- [Codex (OpenAI)](#codex-openai)
+- [Cursor](#cursor)
+- [Pi (Coding Agent Harness)](#pi-coding-agent-harness)
+- [Any MCP Client (Generic)](#any-mcp-client-generic)
+- [Direct HTTP API (No MCP)](#direct-http-api-no-mcp)
+- [Token Management](#token-management)
+- [Tool Reference](#tool-reference)
+- [Troubleshooting](#troubleshooting)
+- [Architecture Notes](#architecture-notes)
+
+---
+
+## Prerequisites
+
+Before connecting, you need:
+
+1. **Citadel URL.** Default: `https://citadel-archive-production.up.railway.app`
+2. **Citadel access token.** A service-account token beginning with `ctdl_`.
+   Create one through the Citadel UI (Access page) or ask your vault admin.
+3. **The repo cloned locally** (if the MCP server needs to run from source).
+   The MCP server is a thin stdio wrapper that calls the hosted Citadel HTTP API.
+
+### Getting a token
+
+1. Open the Citadel UI at the URL above.
+2. Go to the **Access** page.
+3. Click **Create Token**.
+4. Choose a role:
+   - **Reader**: search, mesh, sources, events. Best for most agent work.
+   - **Writer**: reader + ingest + feedback. Use when the agent should also add knowledge.
+   - **Admin**: writer + learning-agent + improvement + token management. Use sparingly.
+5. Copy the token. It is shown **once**. Citadel stores only its hash.
+
+### Role summary
+
+| Role | Search/Read | Ingest/Feedback | Learning Agent | Token Management |
+|---|---|---|---|---|
+| Reader | ✅ | — | — | — |
+| Writer | ✅ | ✅ | — | — |
+| Admin | ✅ | ✅ | ✅ | ✅ |
+
+---
 
 ## Claude Code
 
-Copy `docs/mcp/claude-code-hosted.mcp.json` into your Claude project `.mcp.json`
-or merge the `citadel` entry into an existing `.mcp.json`.
+### Step 1 — Create or update `.mcp.json`
 
-Replace:
+In your project root, create or merge into `.mcp.json`:
 
-```text
-PASTE_CITADEL_TOKEN_HERE
+```json
+{
+  "mcpServers": {
+    "citadel": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/sarthiborkar/masumi/Citadel Archive",
+        "run",
+        "python",
+        "-m",
+        "kb.mcp_server"
+      ],
+      "env": {
+        "CITADEL_HTTP_BASE_URL": "https://citadel-archive-production.up.railway.app",
+        "CITADEL_MCP_ACCESS_TOKEN": "${CITADEL_MCP_ACCESS_TOKEN}",
+        "CITADEL_MCP_MAX_INGEST_BYTES": "200000"
+      }
+    }
+  }
+}
 ```
 
-with a Citadel service-account token.
+Replace the repo path if Citadel is cloned elsewhere. Set the `CITADEL_MCP_ACCESS_TOKEN`
+environment variable in your shell (do not hard-code it):
 
-## Codex
-
-Copy `docs/mcp/codex-hosted.config.toml` into `~/.codex/config.toml`.
-
-Replace:
-
-```text
-PASTE_CITADEL_TOKEN_HERE
+```bash
+export CITADEL_MCP_ACCESS_TOKEN="ctdl_..."
 ```
 
-with a Citadel service-account token.
+### Step 2 — Verify
 
-The Codex template keeps write/admin tools approval-gated:
+Restart Claude Code. Run:
 
-- `citadel_ingest`
-- `citadel_record_feedback`
-- `citadel_run_learning_agent`
-- `citadel_improve`
+```
+Use the citadel_session tool.
+```
+
+If it returns your role and actor info, the connection works.
+
+### Step 3 — Try a search
+
+```
+Search Citadel for "architecture decisions"
+```
+
+### Template file
+
+A ready-to-copy template is at `docs/mcp/claude-code-hosted.mcp.json`. Replace
+`PASTE_CITADEL_TOKEN_HERE` with your token or use `${CITADEL_MCP_ACCESS_TOKEN}`
+for environment variable substitution.
+
+---
+
+## Codex (OpenAI)
+
+### Step 1 — Add to `~/.codex/config.toml`
+
+Append this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.citadel]
+command = "uv"
+args = [
+  "--directory",
+  "/Users/sarthiborkar/masumi/Citadel Archive",
+  "run",
+  "python",
+  "-m",
+  "kb.mcp_server",
+]
+[mcp_servers.citadel.env]
+CITADEL_HTTP_BASE_URL = "https://citadel-archive-production.up.railway.app"
+CITADEL_MCP_ACCESS_TOKEN = "PASTE_CITADEL_TOKEN_HERE"
+CITADEL_MCP_MAX_INGEST_BYTES = "200000"
+
+[mcp_servers.citadel.tools.citadel_ingest]
+approval_mode = "approve"
+
+[mcp_servers.citadel.tools.citadel_record_feedback]
+approval_mode = "approve"
+
+[mcp_servers.citadel.tools.citadel_run_learning_agent]
+approval_mode = "approve"
+
+[mcp_servers.citadel.tools.citadel_improve]
+approval_mode = "approve"
+```
+
+Write/admin tools are approval-gated so Codex asks before making vault changes.
+
+### Step 2 — Verify
+
+Restart Codex. Ask it to call `citadel_session`.
+
+### Template file
+
+A ready-to-copy template is at `docs/mcp/codex-hosted.config.toml`.
+
+---
+
+## Cursor
+
+### Step 1 — Add MCP server
+
+Open Cursor Settings → Features → Model Context Protocol. Add a new MCP server:
+
+- **Name**: `citadel`
+- **Type**: `command`
+- **Command**: `uv`
+- **Args**:
+  ```
+  --directory
+  /Users/sarthiborkar/masumi/Citadel Archive
+  run
+  python
+  -m
+  kb.mcp_server
+  ```
+- **Environment variables**:
+  - `CITADEL_HTTP_BASE_URL` = `https://citadel-archive-production.up.railway.app`
+  - `CITADEL_MCP_ACCESS_TOKEN` = `ctdl_...` (your token)
+  - `CITADEL_MCP_MAX_INGEST_BYTES` = `200000`
+
+### Step 2 — Verify
+
+Start a new chat in Cursor and ask it to use `citadel_session`.
+
+---
+
+## Pi (Coding Agent Harness)
+
+### Using the Codex Plugin
+
+The `plugins/citadel-archive-mcp/` directory contains a Codex-compatible plugin
+with `.codex-plugin/plugin.json`, `.mcp.json`, and bundled skills. Point Pi at
+this plugin directory.
+
+### Using the Root SKILL.md
+
+The root `SKILL.md` at the project root is a standalone skill file. Any agent
+that discovers skills can load it to learn how to access Citadel.
+
+### Connecting from Pi
+
+If Pi supports MCP servers, add the same MCP config as Claude Code above. The
+MCP server is the same stdio wrapper regardless of which agent calls it.
+
+---
+
+## Any MCP Client (Generic)
+
+The MCP server is a standard stdio server. Any client that supports MCP stdio
+can connect by spawning:
+
+```bash
+uv --directory "/Users/sarthiborkar/masumi/Citadel Archive" run python -m kb.mcp_server
+```
+
+With environment variables:
+
+```bash
+CITADEL_HTTP_BASE_URL=https://citadel-archive-production.up.railway.app
+CITADEL_MCP_ACCESS_TOKEN=ctdl_...
+CITADEL_MCP_MAX_INGEST_BYTES=200000
+```
+
+The server exposes:
+
+- **8 tools**: `citadel_session`, `citadel_search`, `citadel_get_mesh`,
+  `citadel_list_sources`, `citadel_ingest`, `citadel_record_feedback`,
+  `citadel_run_learning_agent`, `citadel_improve`
+- **4 resources**: `citadel://session`, `citadel://sources`,
+  `citadel://indexes`, `citadel://events/recent`
+- **3 prompts**: `citadel_answer_from_kb`, `citadel_ingest_decision`,
+  `citadel_summarize_source_changes`
+
+For SSE transport instead of stdio, set:
+
+```bash
+CITADEL_MCP_TRANSPORT=sse
+```
+
+---
+
+## Direct HTTP API (No MCP)
+
+If the client doesn't support MCP, call the HTTP API directly:
+
+```bash
+# Health check
+curl https://citadel-archive-production.up.railway.app/healthz
+
+# Search
+curl -X POST https://citadel-archive-production.up.railway.app/search \
+  -H "Authorization: Bearer ctdl_..." \
+  -H "Content-Type: application/json" \
+  -d '{"query": "architecture decisions", "top_k": 5}'
+
+# Ingest
+curl -X POST https://citadel-archive-production.up.railway.app/ingest \
+  -H "Authorization: Bearer ctdl_..." \
+  -H "Content-Type: application/json" \
+  -d '{"data": "Project decided on PostgreSQL + pgvector for vault storage.", "tags": ["architecture", "decision"]}'
+```
+
+All endpoints require `Authorization: Bearer <token>` except `/healthz` and `/readyz`.
+
+---
+
+## Token Management
+
+### Creating tokens
+
+1. Through the Citadel UI: Access page → Create Token.
+2. Through the API (admin only): `POST /api/access/tokens`
+3. Through the CLI: not yet available (use the UI or API).
+
+### Token format
+
+All persistent tokens begin with `ctdl_` followed by a URL-safe random string.
+Citadel stores only the SHA-256 hash. The raw token is shown once at creation.
+
+### Revoking tokens
+
+- Through the UI: Access page → Revoke.
+- Through the API: `POST /api/access/tokens/{token_id}/revoke`
+- Revoked tokens immediately lose all access.
+
+### Token safety rules
+
+- **Never commit** tokens to git. Use environment variables.
+- **Never echo** tokens in chat or logs.
+- **Never share** tokens between users or agents. One token per identity.
+- **Rotate** if a token may have been exposed.
+- Use the **minimum role** needed. Reader for search; writer only when ingesting.
+
+---
+
+## Tool Reference
+
+### Reader Tools
+
+| Tool | Description | Parameters |
+|---|---|---|
+| `citadel_session` | Show authenticated role, actor, capabilities | — |
+| `citadel_search` | Search the Organization Vault | `query`, `dataset?`, `session_id?`, `top_k?` |
+| `citadel_get_mesh` | Current knowledge mesh snapshot | — |
+| `citadel_list_sources` | Source-learning, GitHub sync, index status | — |
+
+### Writer Tools
+
+| Tool | Description | Parameters |
+|---|---|---|
+| `citadel_ingest` | Add durable context to the vault | `data`, `dataset?`, `tags?`, `session_id?` |
+| `citadel_record_feedback` | Record QA feedback | `qa_id`, `score?`, `text?`, `session_id?`, `dataset?` |
+
+### Admin Tools
+
+| Tool | Description | Parameters |
+|---|---|---|
+| `citadel_run_learning_agent` | Run source-learning agent | `force?`, `dry_run?` |
+| `citadel_improve` | Run Cognee improvement cycle | `dataset?`, `session_ids?` |
+
+### Resources
+
+| URI | Description |
+|---|---|
+| `citadel://session` | Current role and capabilities |
+| `citadel://sources` | Source-learning status |
+| `citadel://indexes` | Index status |
+| `citadel://events/recent` | Recent mesh events |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `CITADEL_HTTP_BASE_URL` | `http://localhost:8000` | Citadel backend URL |
+| `CITADEL_MCP_ACCESS_TOKEN` | — | Bearer token for Citadel API |
+| `CITADEL_MCP_MAX_INGEST_BYTES` | `200000` | Max ingest payload size |
+| `CITADEL_MCP_ALLOW_INSECURE_HTTP` | `false` | Allow non-localhost HTTP |
+| `CITADEL_MCP_TRANSPORT` | `stdio` | MCP transport (stdio or sse) |
+
+---
+
+## Troubleshooting
+
+### Server won't start
+
+```bash
+# Ensure dependencies are installed
+cd "/Users/sarthiborkar/masumi/Citadel Archive"
+uv sync --dev
+
+# Test the MCP server manually
+CITADEL_HTTP_BASE_URL=https://citadel-archive-production.up.railway.app \
+CITADEL_MCP_ACCESS_TOKEN=ctdl_... \
+uv run python -m kb.mcp_server
+```
+
+### 401 Unauthorized
+
+- Check that `CITADEL_MCP_ACCESS_TOKEN` is set and starts with `ctdl_`.
+- Check that the token hasn't been revoked.
+- Try calling `citadel_session` to see the error detail.
+
+### 403 Forbidden
+
+- The token's role doesn't have the required scope.
+- Reader tokens cannot ingest. Writer tokens cannot run admin operations.
+- Check the token's role in the Citadel UI Access page.
+
+### Connection refused / Could not reach Citadel
+
+- Check that `CITADEL_HTTP_BASE_URL` is correct and reachable.
+- Check that the URL uses `https://` for hosted Citadel.
+- Plain `http://` only works for `localhost` unless
+  `CITADEL_MCP_ALLOW_INSECURE_HTTP=true` is set.
+
+### Ingest payload too large
+
+- `citadel_ingest` rejects payloads over `CITADEL_MCP_MAX_INGEST_BYTES` (default 200KB).
+- Summarize or chunk large content before ingesting.
+
+### Citadel returns non-JSON
+
+- The backend may be restarting or misconfigured.
+- Check `/healthz` and `/readyz` endpoints.
+- Check Railway logs if using the hosted deployment.
+
+---
+
+## Architecture Notes
+
+- The MCP server is a **thin stdio wrapper**. It does not run a second Citadel
+  backend. It forwards all calls to the hosted HTTP API.
+- The MCP server is safe to run multiple instances (e.g. one per agent session).
+  It is stateless — all state lives in the hosted Citadel backend.
+- Tool annotations follow the MCP spec: reader tools are marked `readOnlyHint=true`,
+  writer tools are `destructiveHint=false` but not read-only, admin tools are
+  `openWorldHint=true` because they trigger backend jobs.
+- Secret redaction is applied to error messages and debug output. Tokens are
+  never echoed in MCP responses.
+- The MCP server validates that Citadel URLs use HTTPS for non-localhost hosts.
+  Set `CITADEL_MCP_ALLOW_INSECURE_HTTP=true` only on trusted development networks.
+
+---
 
 ## Connector Skill
 
-Give another agent this raw skill URL and ask it to connect Citadel MCP:
+For agents that support loading skills from a URL, point them at:
 
-```text
+```
 https://raw.githubusercontent.com/masumi-network/Citadel-Archive/main/plugins/citadel-archive-mcp/skills/citadel-mcp-connector/SKILL.md
 ```
 
-The skill tells the agent to ask for the Citadel token, write the right client
-config, and avoid committing or echoing the token.
+This skill walks the agent through asking for the token, writing the right client
+config, and verifying the connection — without committing or echoing the token.
+
+For the full agent skill (dos, don'ts, tool reference, domain language), use:
+
+```
+https://raw.githubusercontent.com/masumi-network/Citadel-Archive/main/SKILL.md
+```
