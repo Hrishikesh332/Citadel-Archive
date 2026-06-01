@@ -220,9 +220,12 @@ CITADEL_GITHUB_TOKEN=github_pat_...
 Citadel requests GitHub organization repositories with `type=all`, so private
 repositories visible to the token are included alongside public repositories.
 
-For OpenRouter, set either `LLM_API_KEY` or `OPENROUTER_API_KEY` and use
-`LLM_MODEL=openrouter/free`. Citadel maps `OPENROUTER_API_KEY` to Cognee's
-expected `LLM_API_KEY` at runtime when needed.
+For OpenRouter, set either `LLM_API_KEY` or `OPENROUTER_API_KEY` and choose a
+concrete `LLM_MODEL` from the current OpenRouter model catalog. Citadel maps
+`OPENROUTER_API_KEY` to Cognee's expected `LLM_API_KEY` at runtime when needed.
+GitHub source sync does not require LLM improvement by default; enable
+`CITADEL_GITHUB_SYNC_RUN_IMPROVE=true` only when the configured LLM is known to
+work.
 
 For Railway, create a second service from this repo with:
 

@@ -24,6 +24,12 @@ class FakeCitadel:
         return {"ok": True}
 
 
+class FailingImproveCitadel(FakeCitadel):
+    async def improve(self, **kwargs: Any) -> dict[str, Any]:
+        self.improve_calls.append(kwargs)
+        raise RuntimeError("llm unavailable")
+
+
 class FakeGitHubClient:
     def fetch_repos(self, org: str, *, max_repos: int) -> list[GitHubRepo]:
         return [
@@ -126,6 +132,28 @@ async def test_github_sync_ingests_daily_digest_and_persists_state(tmp_path: Any
     assert status["tracked_repositories"] == 1
     assert status["seen_events"] == 1
     assert status["tracked_commit_repositories"] == 1
+
+
+@pytest.mark.asyncio
+async def test_github_sync_persists_digest_when_improve_fails(tmp_path: Any) -> None:
+    config = CitadelConfig(
+        github_sync_dataset="masumi-network",
+        github_sync_session="masumi-github-daily",
+        github_sync_state_path=str(tmp_path / "github_state.json"),
+        github_sync_run_improve=True,
+    )
+    citadel = FailingImproveCitadel(config)
+    syncer = GitHubOrgSyncer(citadel, client=FakeGitHubClient(), org="masumi-network")
+
+    result = await syncer.run()
+    status = await syncer.status()
+
+    assert result["ingested"] is True
+    assert result["improved"] is False
+    assert result["improve_error"] == "llm unavailable"
+    assert status["tracked_repositories"] == 1
+    assert status["seen_events"] == 1
+    assert citadel.improve_calls[0]["session_ids"] == ["masumi-github-daily"]
 
 
 @pytest.mark.asyncio

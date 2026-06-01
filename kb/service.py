@@ -26,6 +26,11 @@ class Citadel:
         )
         self._seen_hashes: set[str] = set()
 
+    def _default_session_for_dataset(self, dataset: str) -> str:
+        if dataset == self.config.github_sync_dataset:
+            return self.config.github_sync_session
+        return self.config.default_session
+
     @classmethod
     def from_env(cls) -> "Citadel":
         return cls(CitadelConfig.from_env())
@@ -65,10 +70,11 @@ class Citadel:
         session_id: str | None = None,
         top_k: int = 10,
     ) -> list[Any]:
+        target_dataset = dataset or self.config.default_dataset
         return await self.cognee.recall(
             query,
-            dataset=dataset or self.config.default_dataset,
-            session_id=session_id or self.config.default_session,
+            dataset=target_dataset,
+            session_id=session_id or self._default_session_for_dataset(target_dataset),
             top_k=top_k,
         )
 

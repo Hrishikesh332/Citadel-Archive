@@ -132,6 +132,78 @@ async def test_cognee_public_client_does_not_pass_external_metadata_keyword(
     }
 
 
+@pytest.mark.asyncio
+async def test_cognee_public_client_uses_chunk_search_by_default(monkeypatch: Any) -> None:
+    received: dict[str, Any] = {}
+
+    async def run_startup_migrations() -> None:
+        return None
+
+    async def recall(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        received["recall"] = {"args": args, "kwargs": kwargs}
+        return []
+
+    async def search(**kwargs: Any) -> list[dict[str, Any]]:
+        received["search"] = kwargs
+        return [{"ok": True}]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "cognee",
+        SimpleNamespace(
+            SearchType=SimpleNamespace(CHUNKS="chunks"),
+            run_startup_migrations=run_startup_migrations,
+            recall=recall,
+            search=search,
+        ),
+    )
+    client = CogneePublicClient()
+
+    result = await client.recall("note", dataset="notes")
+
+    assert result == [{"ok": True}]
+    assert "recall" not in received
+    assert received["search"]["query_type"] == "chunks"
+    assert received["search"]["datasets"] == ["notes"]
+
+
+@pytest.mark.asyncio
+async def test_cognee_public_client_returns_session_recall_before_chunk_search(
+    monkeypatch: Any,
+) -> None:
+    received: dict[str, Any] = {}
+
+    async def run_startup_migrations() -> None:
+        return None
+
+    async def recall(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        received["recall"] = {"args": args, "kwargs": kwargs}
+        return [{"source": "session"}]
+
+    async def search(**kwargs: Any) -> list[dict[str, Any]]:
+        received["search"] = kwargs
+        return [{"source": "graph"}]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "cognee",
+        SimpleNamespace(
+            SearchType=SimpleNamespace(CHUNKS="chunks"),
+            run_startup_migrations=run_startup_migrations,
+            recall=recall,
+            search=search,
+        ),
+    )
+    client = CogneePublicClient()
+
+    result = await client.recall("note", dataset="notes", session_id="source-session")
+
+    assert result == [{"source": "session"}]
+    assert received["recall"]["kwargs"]["scope"] == "session"
+    assert received["recall"]["kwargs"]["session_id"] == "source-session"
+    assert "search" not in received
+
+
 def test_cognee_public_client_derives_db_env_from_database_url(monkeypatch: Any) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://db_user:db%23pass@db.example:6543/citadel")
     monkeypatch.setenv("VECTOR_DB_PROVIDER", "pgvector")

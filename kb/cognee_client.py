@@ -103,6 +103,15 @@ class CogneePublicClient:
         self._ensure_llm_api_key()
         self._ensure_cognee_database_env()
 
+    def _configured_search_type(self, cognee: Any) -> Any | None:
+        raw_value = os.getenv("CITADEL_COGNEE_SEARCH_TYPE", "CHUNKS").strip().upper()
+        if raw_value in {"", "AUTO", "RECALL"}:
+            return None
+        search_type = getattr(cognee, "SearchType", None)
+        if search_type is None:
+            return None
+        return getattr(search_type, raw_value, getattr(search_type, "CHUNKS", None))
+
     async def _create_cognee_database(self) -> None:
         from cognee.infrastructure.databases.relational import get_relational_engine
 
@@ -160,10 +169,15 @@ class CogneePublicClient:
         data = self._data_with_metadata(data, metadata)
 
         if hasattr(cognee, "remember"):
+            kwargs: dict[str, Any] = {
+                "dataset_name": dataset_name,
+                "session_id": session_id,
+            }
+            if session_id:
+                kwargs["self_improvement"] = False
             return await cognee.remember(
                 data,
-                dataset_name=dataset_name,
-                session_id=session_id,
+                **kwargs,
             )
 
         kwargs = {"dataset_name": dataset_name}
@@ -186,7 +200,18 @@ class CogneePublicClient:
         import cognee
 
         await self._ensure_cognee_ready(cognee)
-        if hasattr(cognee, "recall"):
+        if session_id and hasattr(cognee, "recall"):
+            session_results = await cognee.recall(
+                query,
+                session_id=session_id,
+                top_k=top_k,
+                scope="session",
+            )
+            if session_results:
+                return session_results
+
+        query_type = self._configured_search_type(cognee)
+        if query_type is None and hasattr(cognee, "recall"):
             return await cognee.recall(
                 query,
                 datasets=[dataset],
@@ -194,11 +219,15 @@ class CogneePublicClient:
                 top_k=top_k,
             )
 
-        return await cognee.search(
-            query_text=query,
-            datasets=[dataset],
-            top_k=top_k,
-        )
+        search_kwargs = {
+            "query_text": query,
+            "datasets": [dataset],
+            "session_id": session_id,
+            "top_k": top_k,
+        }
+        if query_type is not None:
+            search_kwargs["query_type"] = query_type
+        return await cognee.search(**search_kwargs)
 
     async def add_feedback(
         self,

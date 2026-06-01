@@ -371,10 +371,13 @@ class GitHubOrgSyncer:
                 tags=["github", self.org, "daily-sync", "repository-activity"],
             )
             if ingest_result.accepted and self.run_improve:
-                improve_result = await self.citadel.improve(
-                    dataset=self.config.github_sync_dataset,
-                    session_ids=[self.config.github_sync_session],
-                )
+                try:
+                    improve_result = await self.citadel.improve(
+                        dataset=self.config.github_sync_dataset,
+                        session_ids=[self.config.github_sync_session],
+                    )
+                except Exception as exc:  # pragma: no cover - depends on runtime LLM config.
+                    improve_result = {"ok": False, "error": str(exc)}
 
         if not dry_run:
             tracked_commits = dict(previous_commits)
@@ -411,7 +414,11 @@ class GitHubOrgSyncer:
             "recent_events": [event.summary_dict() for event in new_events[:20]],
             "ingested": bool(ingest_result and ingest_result.accepted),
             "ingest_reason": getattr(ingest_result, "reason", None),
-            "improved": improve_result is not None,
+            "improved": bool(improve_result)
+            and not (isinstance(improve_result, dict) and improve_result.get("ok") is False),
+            "improve_error": improve_result.get("error")
+            if isinstance(improve_result, dict) and improve_result.get("ok") is False
+            else None,
             "dry_run": dry_run,
             "digest": digest if dry_run else None,
         }

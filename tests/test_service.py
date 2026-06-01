@@ -59,6 +59,22 @@ async def test_ingest_rejects_duplicate_in_process() -> None:
 
 
 @pytest.mark.asyncio
+async def test_search_uses_github_sync_session_for_github_dataset() -> None:
+    fake = FakeCognee()
+    kb = Citadel(
+        CitadelConfig(
+            github_sync_dataset="masumi-network",
+            github_sync_session="masumi-github-daily",
+        ),
+        cognee=fake,
+    )
+
+    result = await kb.search("weekly updates", dataset="masumi-network")
+
+    assert result[0]["session_id"] == "masumi-github-daily"
+
+
+@pytest.mark.asyncio
 async def test_feedback_can_auto_improve() -> None:
     fake = FakeCognee()
     kb = Citadel(CitadelConfig(auto_improve=True), cognee=fake)
