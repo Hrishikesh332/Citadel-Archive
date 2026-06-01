@@ -1,0 +1,27 @@
+{
+  "name": "citadel-archive-mcp",
+  "version": "0.1.0",
+  "description": "Connect Codex agents to Citadel Archive through MCP.",
+  "author": {
+    "name": "Citadel Archive",
+    "url": "https://github.com/sarthib7"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["citadel", "mcp", "agents", "organization-vault"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Citadel Archive MCP",
+    "shortDescription": "Search and update the Citadel Organization Vault from Codex.",
+    "longDescription": "Citadel Archive MCP gives Codex agents controlled reader, writer, and admin access to Citadel through the local MCP server wrapper.",
+    "developerName": "Citadel Archive",
+    "category": "Productivity",
+    "capabilities": ["MCP", "Search", "Knowledge Base"],
+    "defaultPrompt": [
+      "Search Citadel before answering this project question.",
+      "Add this durable decision to Citadel.",
+      "Summarize recent Citadel source-learning changes."
+    ],
+    "brandColor": "#5865F2"
+  }
+}

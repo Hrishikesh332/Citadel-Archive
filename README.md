@@ -245,6 +245,8 @@ works for compatibility.
 
 Citadel includes a stdio MCP server for team agents. It calls the hosted
 Citadel HTTP API and uses the same reader/writer/admin tokens as the UI.
+The server implementation lives in `kb/mcp_server.py`; the Codex plugin wrapper
+lives in `plugins/citadel-archive-mcp/`.
 
 ```bash
 CITADEL_HTTP_BASE_URL=https://citadel-archive-production.up.railway.app
@@ -274,6 +276,11 @@ Example Claude/Codex MCP command:
 Exposed tools include `citadel_search`, `citadel_get_mesh`,
 `citadel_list_sources`, `citadel_ingest`, `citadel_record_feedback`,
 `citadel_run_learning_agent`, and `citadel_improve`.
+
+The plugin is intentionally thin. It does not run a second Citadel backend. It
+bundles `.mcp.json` and a small agent skill so Codex can launch the stdio MCP
+server, pass `CITADEL_MCP_ACCESS_TOKEN`, and call the hosted Citadel API through
+that server.
 
 ## Python API
 
