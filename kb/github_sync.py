@@ -397,6 +397,7 @@ class GitHubOrgSyncer:
             )
             if should_ingest:
                 state["last_digest_at"] = checked_at
+                state["last_digest"] = digest
             self._save_state(state)
 
         return {

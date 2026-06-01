@@ -8,6 +8,7 @@ from kb.cognee_client import CogneeGateway, CogneePublicClient
 from kb.config import CitadelConfig
 from kb.filters import PreIngestFilter
 from kb.models import FeedbackRequest, FeedbackResult, IngestResult
+from kb.source_search import search_github_sync_state
 from kb.tags import merge_tags
 
 
@@ -71,12 +72,15 @@ class Citadel:
         top_k: int = 10,
     ) -> list[Any]:
         target_dataset = dataset or self.config.default_dataset
-        return await self.cognee.recall(
+        results = await self.cognee.recall(
             query,
             dataset=target_dataset,
             session_id=session_id or self._default_session_for_dataset(target_dataset),
             top_k=top_k,
         )
+        if results or target_dataset != self.config.github_sync_dataset:
+            return results
+        return search_github_sync_state(query, self.config, top_k=top_k)
 
     async def feedback(self, request: FeedbackRequest) -> FeedbackResult:
         session_id = request.session_id or self.config.default_session

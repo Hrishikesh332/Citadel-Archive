@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -129,6 +131,8 @@ async def test_github_sync_ingests_daily_digest_and_persists_state(tmp_path: Any
     assert "teach the archive about commits" in citadel.ingest_calls[0]["data"]
     assert citadel.ingest_calls[0]["dataset"] == "masumi-network"
     assert citadel.improve_calls[0]["session_ids"] == ["masumi-github-daily"]
+    state = json.loads(Path(config.github_sync_state_path).read_text(encoding="utf-8"))
+    assert "teach the archive about commits" in state["last_digest"]
     assert status["tracked_repositories"] == 1
     assert status["seen_events"] == 1
     assert status["tracked_commit_repositories"] == 1
