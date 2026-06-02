@@ -359,6 +359,7 @@ class GitHubOrgSyncer:
             changed_repos=changed_repos,
             events=new_events,
             commits=new_commits,
+            max_commits_per_repo=self.max_commits_per_repo if self.include_commits else None,
         )
 
         ingest_result = None
@@ -491,6 +492,7 @@ def format_digest(
     changed_repos: list[GitHubRepo],
     events: list[GitHubEvent],
     commits: list[GitHubCommit],
+    max_commits_per_repo: int | None = None,
 ) -> str:
     source_url = SOURCE_URL_TEMPLATE.format(org=org)
     lines = [
@@ -532,6 +534,11 @@ def format_digest(
         lines.append("- No new public org events were returned by GitHub.")
 
     lines.extend(["", "## Recent commits"])
+    if max_commits_per_repo:
+        lines.append(
+            f"Showing up to {max_commits_per_repo} most recent commit(s) per changed "
+            "repository; repositories with more commits than this are truncated here."
+        )
     if commits:
         for commit in commits[:40]:
             author = commit.author_login or commit.author_name or "unknown author"
@@ -558,44 +565,55 @@ def format_digest(
 def _event_summary(event_type: str, payload: dict[str, Any]) -> str:
     if event_type == "PushEvent":
         commits = payload.get("commits") or []
+        # GitHub's events feed reports the full push size separately from the
+        # (possibly truncated) inline commit array. Prefer the real count so the
+        # digest never claims "Pushed 0 commit(s)" when commits exist.
+        count = payload.get("size")
+        if count is None:
+            count = payload.get("distinct_size")
+        if count is None:
+            count = len(commits)
         messages = [_short(commit.get("message"), length=80) for commit in commits[:2]]
         ref = str(payload.get("ref") or "").removeprefix("refs/heads/")
         detail = "; ".join(message for message in messages if message)
-        return f"Pushed {len(commits)} commit(s) to {ref or 'a branch'}" + (
+        plural = "" if count == 1 else "s"
+        return f"Pushed {count} commit{plural} to {ref or 'a branch'}" + (
             f": {detail}" if detail else ""
         )
     if event_type == "PullRequestEvent":
         pull_request = payload.get("pull_request") or {}
-        return (
-            f"{payload.get('action', 'updated')} pull request "
-            f"#{pull_request.get('number')}: {_short(pull_request.get('title'), length=100)}"
-        )
+        action = payload.get("action", "updated")
+        if action == "closed" and pull_request.get("merged"):
+            action = "merged"
+        title = _short(pull_request.get("title"), length=100) or "(no title)"
+        return f"{action} pull request #{pull_request.get('number')}: {title}"
     if event_type == "PullRequestReviewEvent":
         pull_request = payload.get("pull_request") or {}
         review = payload.get("review") or {}
+        title = _short(pull_request.get("title"), length=100) or "(no title)"
         return (
             f"{payload.get('action', 'reviewed')} review "
             f"{review.get('state', 'submitted')} on pull request "
-            f"#{pull_request.get('number')}: {_short(pull_request.get('title'), length=100)}"
+            f"#{pull_request.get('number')}: {title}"
         )
     if event_type == "PullRequestReviewCommentEvent":
         pull_request = payload.get("pull_request") or {}
         comment = payload.get("comment") or {}
+        body = _short(comment.get("body"), length=100) or "(no comment body)"
         return (
             f"{payload.get('action', 'commented')} review comment on pull request "
-            f"#{pull_request.get('number')}: {_short(comment.get('body'), length=100)}"
+            f"#{pull_request.get('number')}: {body}"
         )
     if event_type == "IssuesEvent":
         issue = payload.get("issue") or {}
-        return (
-            f"{payload.get('action', 'updated')} issue "
-            f"#{issue.get('number')}: {_short(issue.get('title'), length=100)}"
-        )
+        title = _short(issue.get("title"), length=100) or "(no title)"
+        return f"{payload.get('action', 'updated')} issue #{issue.get('number')}: {title}"
     if event_type == "CreateEvent":
         return f"Created {payload.get('ref_type', 'ref')} {payload.get('ref') or ''}".strip()
     if event_type == "ReleaseEvent":
         release = payload.get("release") or {}
-        return f"{payload.get('action', 'updated')} release {_short(release.get('name'), length=100)}"
+        name = _short(release.get("name"), length=100) or release.get("tag_name") or "(unnamed)"
+        return f"{payload.get('action', 'updated')} release {name}"
     if event_type == "ForkEvent":
         forkee = payload.get("forkee") or {}
         return f"Forked to {forkee.get('full_name', 'a new repository')}"
