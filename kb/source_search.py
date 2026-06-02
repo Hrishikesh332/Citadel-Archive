@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 import json
 import re
 from pathlib import Path
@@ -11,6 +12,46 @@ from kb.config import CitadelConfig
 MIN_WORD_LENGTH = 2
 MAX_CHUNK_CHARS = 8_000
 GITHUB_SOURCE_URL_TEMPLATE = "https://github.com/orgs/{org}/repositories"
+GITHUB_DOC_ID_PREFIX = "ghsync"
+
+
+def github_section_id(org: str, title: str) -> str:
+    """Stable document id for a GitHub digest section.
+
+    Stable across reruns for the same org/section title so a search hit can be
+    re-fetched through ``GET /api/documents/{id}``.
+    """
+    digest = sha256(f"{org}\n{title}".encode("utf-8")).hexdigest()[:16]
+    return f"{GITHUB_DOC_ID_PREFIX}:{digest}"
+
+
+def github_section_document(document_id: str, config: CitadelConfig) -> dict[str, Any] | None:
+    """Resolve a GitHub digest section by its stable id, or None if unknown."""
+    state_path = Path(config.github_sync_state_path)
+    state = _load_state(state_path)
+    digest = str(state.get("last_digest") or "").strip()
+    if not digest:
+        return None
+    org = str(state.get("org") or config.github_org)
+    source_url = GITHUB_SOURCE_URL_TEMPLATE.format(org=org)
+    for title, content in _digest_sections(digest):
+        if github_section_id(org, title) == document_id:
+            return {
+                "id": document_id,
+                "source": "github_sync_state",
+                "source_type": "github",
+                "dataset": config.github_sync_dataset,
+                "session_id": config.github_sync_session,
+                "title": title,
+                "body": content[:MAX_CHUNK_CHARS],
+                "metadata": {
+                    "org": org,
+                    "source_url": source_url,
+                    "checked_at": state.get("last_checked_at"),
+                    "digest_at": state.get("last_digest_at"),
+                },
+            }
+    return None
 
 
 def _tokenize(text: str) -> set[str]:
@@ -85,6 +126,7 @@ def search_github_sync_state(
 
     return [
         {
+            "id": github_section_id(org, title),
             "source": "github_sync_state",
             "dataset": config.github_sync_dataset,
             "session_id": config.github_sync_session,

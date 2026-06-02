@@ -77,6 +77,7 @@ class CitadelConfig:
     obsidian_sync_state_path: str = ".citadel/obsidian_sync_state.json"
     audit_max_events: int = 1000
     default_dataset: str = "personal"
+    search_default_dataset: str | None = None
     default_session: str = "personal-session"
     default_tags: tuple[str, ...] = field(default_factory=tuple)
     min_chars: int = 3
@@ -120,6 +121,7 @@ class CitadelConfig:
             ),
             audit_max_events=_int(os.getenv("CITADEL_AUDIT_MAX_EVENTS"), default=1000),
             default_dataset=os.getenv("CITADEL_DEFAULT_DATASET", "personal"),
+            search_default_dataset=os.getenv("CITADEL_SEARCH_DEFAULT_DATASET") or None,
             default_session=os.getenv("CITADEL_DEFAULT_SESSION", "personal-session"),
             default_tags=tuple(_csv(os.getenv("CITADEL_DEFAULT_TAGS"))),
             min_chars=int(os.getenv("CITADEL_MIN_CHARS", "3")),

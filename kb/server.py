@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import hashlib
 import hmac
 import json
@@ -18,19 +19,36 @@ from pydantic import BaseModel, Field
 from kb.access import AccessIdentity, AccessStore, ROLE_ORDER, hash_api_token
 from kb.github_sync import GitHubOrgSyncer
 from kb.learning_agent import LearningAgent
+from kb.mcp_server import create_mcp_server
 from kb.mesh import MeshState
 from kb.models import FeedbackRequest
 from kb.obsidian_sync import ObsidianSyncStore, SyncPushDocument, normalize_path
 from kb.service import Citadel
 from kb.skills import skill_catalog, skill_path
+from kb.source_search import GITHUB_DOC_ID_PREFIX, github_section_document
+
+# Hosted MCP: one streamable-HTTP endpoint at /mcp, authenticated per request by
+# the caller's ctdl_ bearer token. No clone, no local Python — agents point their
+# MCP client at https://<host>/mcp with Authorization: Bearer <token>.
+mcp_server = create_mcp_server()
+mcp_app = mcp_server.streamable_http_app()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> Any:
+    async with mcp_server.session_manager.run():
+        yield
+
 
 app = FastAPI(
     title="Citadel Archive",
     version="0.1.0",
     description="Self-hosted Organization Vault wrapper around Cognee.",
+    lifespan=lifespan,
 )
 STATIC_DIR = Path(__file__).with_name("static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/mcp", mcp_app)
 ADMIN_COOKIE = "citadel_admin"
 
 LOGIN_HTML = """<!doctype html>
@@ -358,6 +376,31 @@ def role_payload(role: str, identity: AccessIdentity | None = None) -> dict[str,
             "scopes": list(identity.scopes),
         },
     }
+
+
+def known_datasets(config: Any) -> list[str]:
+    """Datasets a caller can target, in preference order, deduplicated."""
+    ordered: list[str] = []
+    for dataset in (config.search_default_dataset, config.github_sync_dataset, config.default_dataset):
+        if dataset and dataset not in ordered:
+            ordered.append(dataset)
+    return ordered
+
+
+def with_result_id(result: Any, index: int) -> Any:
+    """Ensure a search result dict carries a stable ``id`` for drill-down.
+
+    Results that already supply an id (e.g. the GitHub digest fallback) are left
+    untouched. Other dict results get a content-derived id so a hit can be
+    re-fetched via ``GET /api/documents/{id}``. Non-dict results pass through.
+    """
+    if not isinstance(result, dict):
+        return result
+    if result.get("id"):
+        return result
+    basis = json.dumps(result, sort_keys=True, default=str)
+    derived = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+    return {"id": f"chunk:{derived}", **result}
 
 
 def public_base_url(request: Request) -> str:
@@ -777,6 +820,11 @@ async def resolve_obsidian_conflict(
 @app.get("/api/documents/{document_id}")
 async def source_document(document_id: str, request: Request) -> Any:
     require_role(request, "reader")
+    if document_id.startswith(f"{GITHUB_DOC_ID_PREFIX}:"):
+        github_document = github_section_document(document_id, get_citadel().config)
+        if github_document is None:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        return {"ok": True, "document": jsonable_encoder(github_document)}
     try:
         document = get_obsidian_sync().document(document_id)
     except KeyError as exc:
@@ -879,11 +927,15 @@ async def search(body: SearchBody, request: Request) -> Any:
     require_role(request, "reader")
     citadel = get_citadel()
     mesh_state = get_mesh()
-    dataset = body.dataset or citadel.config.default_dataset
+    dataset = (
+        body.dataset
+        or citadel.config.search_default_dataset
+        or citadel.config.default_dataset
+    )
     try:
         results = await citadel.search(
             body.query,
-            dataset=body.dataset,
+            dataset=dataset,
             session_id=body.session_id,
             top_k=body.top_k,
         )
@@ -897,7 +949,15 @@ async def search(body: SearchBody, request: Request) -> Any:
         dataset=dataset,
         result_count=len(results),
     )
-    return jsonable_encoder({"results": results})
+    normalized = [with_result_id(result, index) for index, result in enumerate(results)]
+    payload: dict[str, Any] = {"results": normalized, "dataset": dataset}
+    if not normalized and body.dataset is None:
+        payload["note"] = (
+            "No results in the default dataset. Pass an explicit \"dataset\" to search a "
+            "specific source; see known_datasets."
+        )
+        payload["known_datasets"] = known_datasets(citadel.config)
+    return jsonable_encoder(payload)
 
 
 @app.post("/feedback")

@@ -55,7 +55,7 @@ def test_search_clamps_top_k_and_tracks_tool_name() -> None:
     client = FakeHttpClient()
     server = create_mcp_server(client)
 
-    result = tool_fn(server, "citadel_search")(" source state ", top_k=999)
+    result = tool_fn(server, "citadel_search")(" source state ", None, top_k=999)
 
     assert result["payload"]["query"] == "source state"
     assert result["payload"]["top_k"] == MAX_SEARCH_TOP_K
@@ -68,8 +68,8 @@ def test_search_uses_mcp_default_dataset(monkeypatch: pytest.MonkeyPatch) -> Non
     client = FakeHttpClient()
     server = create_mcp_server(client)
 
-    result = tool_fn(server, "citadel_search")(" source state ")
-    explicit = tool_fn(server, "citadel_search")(" notes ", dataset="personal")
+    result = tool_fn(server, "citadel_search")(" source state ", None)
+    explicit = tool_fn(server, "citadel_search")(" notes ", None, dataset="personal")
 
     assert result["payload"]["dataset"] == "masumi-network"
     assert explicit["payload"]["dataset"] == "personal"
@@ -79,14 +79,14 @@ def test_write_tools_reject_empty_or_oversized_payloads(monkeypatch: pytest.Monk
     server = create_mcp_server(FakeHttpClient())
 
     with pytest.raises(ToolError, match="data must not be empty"):
-        tool_fn(server, "citadel_ingest")("   ")
+        tool_fn(server, "citadel_ingest")("   ", None)
 
     monkeypatch.setenv("CITADEL_MCP_MAX_INGEST_BYTES", "4")
     with pytest.raises(ToolError, match="payload is 5 bytes"):
-        tool_fn(server, "citadel_ingest")("12345")
+        tool_fn(server, "citadel_ingest")("12345", None)
 
     with pytest.raises(ToolError, match="qa_id must not be empty"):
-        tool_fn(server, "citadel_record_feedback")("")
+        tool_fn(server, "citadel_record_feedback")("", None)
 
 
 def test_remote_http_base_url_is_rejected_without_escape_hatch(

@@ -421,3 +421,70 @@ def test_access_tokens_are_hashed_and_revocable(tmp_path: Any) -> None:
         json={"access_key": token},
     )
     assert rejected.status_code == 401
+
+
+class EmptyCitadel(FakeCitadel):
+    async def search(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+
+def test_search_without_dataset_hints_known_datasets() -> None:
+    client = authed_client("test-reader")
+    app.state.citadel = EmptyCitadel()
+
+    response = client.post("/search", json={"query": "anything"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == []
+    assert "note" in body
+    assert "masumi-network" in body["known_datasets"]
+
+
+def test_search_with_explicit_empty_dataset_omits_hint() -> None:
+    client = authed_client("test-reader")
+    app.state.citadel = EmptyCitadel()
+
+    response = client.post("/search", json={"query": "anything", "dataset": "notes"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == []
+    assert "note" not in body
+
+
+def test_github_digest_search_hit_drills_down_to_document(tmp_path: Any) -> None:
+    import json as _json
+
+    state_path = tmp_path / "github_state.json"
+    state_path.write_text(
+        _json.dumps(
+            {
+                "org": "masumi-network",
+                "last_checked_at": "2026-06-01T00:00:00Z",
+                "last_digest_at": "2026-06-01T00:00:00Z",
+                "last_digest": "# masumi-network GitHub daily update\n\n"
+                "## Recent commits\n- abc: teach the archive about commits.\n",
+            }
+        ),
+        encoding="utf-8",
+    )
+    citadel = FakeCitadel()
+    citadel.config = CitadelConfig(
+        admin_key="test-admin",
+        reader_keys=("test-reader",),
+        writer_keys=("test-writer",),
+        github_sync_dataset="masumi-network",
+        github_sync_state_path=str(state_path),
+    )
+    client = authed_client("test-reader")
+    app.state.citadel = citadel
+
+    from kb.source_search import search_github_sync_state
+
+    hit = search_github_sync_state("commits", citadel.config, top_k=1)[0]
+    document = client.get(f"/api/documents/{hit['id']}")
+
+    assert document.status_code == 200
+    assert document.json()["document"]["title"] == hit["title"]
+    assert "teach the archive about commits" in document.json()["document"]["body"]
