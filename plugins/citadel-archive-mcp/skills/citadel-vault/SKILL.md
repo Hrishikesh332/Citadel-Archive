@@ -1,9 +1,17 @@
 ---
 name: citadel-vault
-description: Use when a user asks project, source, architecture, or operational questions that may be answered from the Citadel Organization Vault; wants to persist durable project knowledge in Citadel; asks about organization memory, vault search, knowledge mesh, source-learning status, or needs to interact with the Citadel vault in any way. Triggers include "search citadel", "check citadel", "ask citadel", "add to citadel", "ingest into citadel", "citadel vault", "organization vault", "organization memory", "knowledge mesh", or "citadel archive".
+description: Use when a user asks project, source, architecture, or operational questions that may be answered from the Citadel Organization Vault; wants to persist durable project knowledge in Citadel; asks about organization memory, vault search, knowledge mesh, source-learning status, or needs to interact with the Citadel vault in any way. Triggers include "search citadel", "check citadel", "ask citadel", "add to citadel", "ingest into citadel", "citadel vault", "organization vault", and https://citadel-archive-production.up.railway.app/skills/vault.
 ---
 
 # Citadel Vault
+
+**Skill URL:** `https://citadel-archive-production.up.railway.app/skills/vault`  
+**Setup first:** `https://citadel-archive-production.up.railway.app/skills/connect`  
+**Public vs private:** `https://citadel-archive-production.up.railway.app/skills/boundary`
+
+Organization memory lives on the **private Railway vault**, not in the public
+Citadel-Archive git repo. Access it only through MCP/HTTP with the user's `ctdl_`
+token. Never commit vault content or tokens to git.
 
 Use the Citadel MCP server as the capability boundary for organization memory.
 Prefer reader service-account tokens. Treat writer and admin tokens as elevated
@@ -98,4 +106,4 @@ effect.
 | Access Token | MCP key, API secret |
 | Repository Daily Update | employee report |
 
-Full domain language: `CONTEXT.md` at the project root.
+Full domain language: `CONTEXT.md` in [Citadel-Archive](https://github.com/masumi-network/Citadel-Archive).
