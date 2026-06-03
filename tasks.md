@@ -161,6 +161,17 @@
   - scheduled run logged at `2026-06-03T03:04:06Z`
   - result: `ingested=true`, `dry_run=false`, `improved=false`
   - next scheduled run: `2026-06-04T03:00:00Z`
+- Hosted MCP/security rollout deployed on 2026-06-03:
+  - production commit: `3c70e92`
+  - `/healthz` returns `200` with private no-store cache policy and security headers
+  - `/.well-known/citadel.json` returns public discovery metadata and advertises
+    `/mcp/`
+  - legacy `/mcp` redirects to `/mcp/` with relative `Location: /mcp/`
+  - hosted MCP `initialize` returns `200`
+  - hosted MCP `tools/list` returns 13 tools
+  - hosted MCP `citadel_session` succeeds and writes an `mcp.citadel_session`
+    audit event
+  - backup-mirror dry-run returns `ok=true`, `written=false`, `published=false`
 
 ## Current Railway State
 
@@ -171,9 +182,8 @@
   documentation rollout.
 - Cron service `Citadel-GitHub-Sync` has schedule `0 3 * * *` and the
   2026-06-03 scheduled run completed with ingestion accepted.
-- Production web is still deployed at commit `97c3009`; the local backup-mirror
-  API exists in this workspace but is not live yet. A dry-run call to
-  `/api/backup-mirror/run` returned `404 Not Found` on 2026-06-03.
+- Production web is deployed at commit `3c70e92` and serves the hosted MCP,
+  discovery, skill hashing, audit, and backup-mirror API changes.
 - OpenRouter is configured through `OPENROUTER_API_KEY` and
   `LLM_MODEL=openrouter/free` on both Railway services.
 
@@ -226,8 +236,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## Next
 
-- Deploy the current backup-mirror/API/MCP hardening changes to Railway before
-  creating the backup-mirror cron service.
+- Create the Railway `backup-mirror` cron service after deciding whether the
+  first scheduled runs should stay dry-run or write local manifests.
 - Verify admin key unlocks UI.
 - Verify `/api/github-sync` in the hosted UI.
 - Continue testing real Cognee vector/graph search. Current live company MCP
@@ -237,9 +247,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - Test self-upgrade.
 - Issue fresh per-teammate/per-agent tokens for rollout; use reader by default
   and writer/admin only when those roles are needed.
-- Re-run the backup-mirror dry-run after deployment:
-  `scripts/run_railway.py` with `CITADEL_RUN_MODE=backup-mirror` against the
-  hosted API should return `200` from `/api/backup-mirror/run`.
 - Create the Railway `backup-mirror` cron service using
   `CITADEL_RUN_MODE=backup-mirror` and a mounted `/data` volume.
 - Configure a dedicated `CITADEL_BACKUP_MIRROR_TOKEN`, enable

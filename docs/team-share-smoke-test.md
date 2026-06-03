@@ -1,6 +1,6 @@
 # Citadel Team Share Smoke Test
 
-Last updated: 2026-06-02.
+Last updated: 2026-06-03.
 
 Use this checklist before sharing Citadel setup with teammates or agents.
 
@@ -25,17 +25,23 @@ files.
 
 ## Verified State
 
-Verified on 2026-06-02, production commit
-`7a4a1d9b0b3cd921f3863c5f81667973f231c7fe`.
+Verified on 2026-06-03, production commit
+`3c70e92171b5a82e7aa99609b3d0596c3379127e`.
 
 - `npx skills add masumi-network/Citadel-Archive` installs the root
   `citadel-archive` skill.
-- Public endpoints return `200` for `/healthz`, `/skills`, and
-  `/skills/connect`.
-- Hosted MCP initializes, lists 9 tools, and exposes `citadel_session`,
-  `citadel_search`, and `citadel_ingest`.
+- Public endpoints return `200` for `/healthz`, `/.well-known/citadel.json`,
+  `/skills`, `/skills/connect`, and `/static/login.js`.
+- Hosted MCP initializes at `/mcp/`, lists 13 tools, and exposes
+  `citadel_discovery`, `citadel_session`, `citadel_search`, `citadel_ingest`,
+  `citadel_backup_mirror_status`, `citadel_run_backup_mirror`, and
+  `citadel_audit_events`.
 - A writer token successfully reads and ingests through direct HTTP.
 - A writer token successfully reads and ingests through hosted MCP.
+- A hosted MCP `citadel_session` call is recorded in `/api/audit?view=mcp` as
+  `mcp.citadel_session`.
+- Backup mirror dry-run returns `ok=true`, `written=false`, and
+  `published=false`.
 - Railway `Citadel-Archive` production service is `SUCCESS` and `RUNNING` on the
   same commit.
 
@@ -45,6 +51,7 @@ Verified on 2026-06-02, production commit
 export CITADEL_BASE_URL=https://citadel-archive-production.up.railway.app
 
 curl -fsS "$CITADEL_BASE_URL/healthz"
+curl -fsS "$CITADEL_BASE_URL/.well-known/citadel.json" | python3 -m json.tool
 curl -fsS "$CITADEL_BASE_URL/skills" | python3 -m json.tool
 curl -fsS "$CITADEL_BASE_URL/skills/connect" | sed -n '1,80p'
 ```
@@ -71,11 +78,12 @@ curl -fsS -X POST "$CITADEL_BASE_URL/search" \
 
 A plain `curl` GET to `/mcp/` is not a valid MCP client request. The endpoint
 expects streamable HTTP with `Accept: text/event-stream` or a real MCP client.
+Legacy `/mcp` redirects to `/mcp/` with a relative `Location` header.
 
 Expected MCP results with a writer token:
 
 - `initialize`: `200`
-- `tools/list`: includes 9 Citadel tools
+- `tools/list`: includes 13 Citadel tools
 - `citadel_session`: role `writer`, `read=true`, `write=true`
 - `citadel_search`: `200`
 - `citadel_ingest`: `200`

@@ -109,6 +109,19 @@ Last updated: 2026-06-03.
     `https://citadel-archive-production.up.railway.app/api/backup-mirror/run`.
   - Production returned `404 Not Found` because the live web service is still on
     the older commit without the backup-mirror API.
+- Deployed hosted MCP/security hardening:
+  - Commit `7c37c86` deployed the role/scope enforcement, MCP audit, discovery
+    manifest, skill hashes, backup-mirror API, security headers, and cache policy.
+  - Commit `3c70e92` made `/mcp/` the canonical hosted MCP endpoint and kept
+    legacy `/mcp` as a relative redirect to avoid an absolute `http://` Location
+    behind Railway.
+  - Production `/.well-known/citadel.json` now advertises
+    `https://citadel-archive-production.up.railway.app/mcp/`.
+  - Hosted MCP `initialize` returns `200`, `tools/list` returns 13 tools, and a
+    `citadel_session` tool call is recorded in MCP audit as
+    `mcp.citadel_session`.
+  - Backup mirror dry-run through the hosted API returns `ok=true`,
+    `written=false`, and `published=false`.
 
 ## 2026-06-02
 

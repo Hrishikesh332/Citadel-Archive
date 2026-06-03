@@ -66,10 +66,13 @@ Verified on 2026-06-02:
 Operational checkpoint on 2026-06-03:
 
 - Local tests pass for the backup-mirror API and cron wrapper.
-- The live Railway web service has not yet deployed those API routes; a hosted
-  dry-run call to `/api/backup-mirror/run` returned `404 Not Found`.
-- Deploy the current Citadel Archive changes before creating or enabling the
-  backup-mirror cron service.
+- Production commit `3c70e92` serves `/api/backup-mirror/run`.
+- Hosted dry-run through `scripts/run_backup_mirror.py` returned `ok=true`,
+  `dry_run=true`, `written=false`, `published=false`, and tracked 3 manifest
+  entries.
+- Non-dry-run writes and GitHub publishing remain disabled until
+  `CITADEL_BACKUP_MIRROR_ENABLED=true`, `CITADEL_BACKUP_MIRROR_PUSH_ENABLED=true`,
+  and a dedicated mirror token are configured.
 
 ## Configuration (Citadel Archive)
 
