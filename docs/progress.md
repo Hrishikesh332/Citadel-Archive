@@ -4,6 +4,30 @@ Last updated: 2026-06-03.
 
 ## 2026-06-03
 
+- Added Google Chat Organization Update Digest support:
+  - `kb/organization_digest.py` builds a constructive source-linked digest from
+    GitHub PR/activity data and recent Citadel context, with an OpenRouter-backed
+    agent read and deterministic fallback.
+  - `kb/google_chat.py` posts outbound-only messages via Google Chat API app
+    auth, bounded retries, thread keys, client message IDs, and sanitized
+    delivery status.
+  - The learning-agent run now supports preview-only manual runs and explicit
+    `post_to_chat` delivery for scheduled or admin-triggered posts.
+  - Added an admin-only Google Chat test endpoint for rollout smoke tests:
+    `/api/learning-agent/google-chat/test`.
+  - Updated the Source Sync dashboard action to run the learning-agent path, show
+    digest preview and Google Chat status, and expose a separate Google Chat
+    smoke-test button.
+  - Added ADR 0002 and the rollout plan in
+    `docs/google-chat-organization-update-digest-plan.md`.
+  - Verified with `uv run ruff check .` and `uv run pytest`.
+- Checked Railway rollout state for the digest:
+  - Project `Citadel Archive`, production service `Citadel-GitHub-Sync` is still
+    scheduled for `0 3 * * *`.
+  - The cron service still has a start command override:
+    `python -m kb.github_sync --org masumi-network`.
+  - Target state is documented in the Google Chat rollout plan before mutating
+    production Railway config.
 - Installed this workspace's project MCP config against the hosted Citadel MCP
   endpoint:
   - `.mcp.json` now points to

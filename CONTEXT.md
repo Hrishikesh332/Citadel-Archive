@@ -68,6 +68,18 @@ _Avoid_: chat message, random update, raw agent conversation
 A source-linked summary of meaningful changes in one repository over a day.
 _Avoid_: employee report, department update, surveillance
 
+**Meaningful Source Change**:
+A source-linked change that affects work visibility, product behavior, architecture, reliability, decisions, blockers, or active repository momentum.
+_Avoid_: raw activity, commit spam, productivity tracking
+
+**Organization Update Digest**:
+A source-linked summary of meaningful changes, features, decisions, and ongoing work produced from the **Organization Vault**.
+_Avoid_: chat transcript, people report, raw activity feed, surveillance
+
+**Security Finding**:
+A source-linked, redacted report of a potential secret exposure or high-risk issue that requires team attention.
+_Avoid_: secret dump, raw match, vague warning
+
 **Knowledge Conflict**:
 A visible disagreement between pieces of **Structured Knowledge** or their supporting **Source Snapshots**.
 _Avoid_: merge, overwrite, silent correction
@@ -87,6 +99,11 @@ _Avoid_: merge, overwrite, silent correction
 - A **Vault Member** or **Agent Identity** with write permission may create a **Vault Contribution**.
 - **Agent Messenger** messages do not become **Vault Contributions** unless an actor with write permission adds them.
 - A **Repository Daily Update** summarizes repository changes, not individual people.
+- A **Repository Daily Update** is composed from **Meaningful Source Changes** in one repository.
+- An **Organization Update Digest** can include one or more **Repository Daily Updates** plus other source-linked changes from the **Organization Vault**.
+- An **Organization Update Digest** highlights **Meaningful Source Changes** across repositories and other approved sources over a defined time window.
+- An **Organization Update Digest** can be delivered to an external communication surface without becoming **Source Material** itself.
+- A **Security Finding** is separate from an **Organization Update Digest** and should never expose secret values in external communication surfaces.
 - A **Knowledge Conflict** should be shown when source-linked knowledge disagrees.
 
 ## Example Dialogue
@@ -121,6 +138,15 @@ _Avoid_: merge, overwrite, silent correction
 > **Dev:** "What belongs in a repository daily update?"
 > **Domain expert:** "Meaningful commits, pull requests, and repository changes."
 >
+> **Dev:** "Should the digest list every commit from the last day?"
+> **Domain expert:** "No. It should highlight **Meaningful Source Changes**, especially open pull requests, merged work, active repositories, blockers, and the vault's source-linked interpretation of the last 24 hours."
+>
+> **Dev:** "Should the Google Chat bot summarize what everyone said in chat?"
+> **Domain expert:** "No. It should deliver an **Organization Update Digest** from source-linked vault context, not turn chat transcripts into vault memory."
+>
+> **Dev:** "If a future PR check finds an API key, should the digest post it?"
+> **Domain expert:** "No. Create a **Security Finding** with redacted details and link to the GitHub check; never post the secret value."
+>
 > **Dev:** "What if a note disagrees with a newer repository change?"
 > **Domain expert:** "Prefer the newer source-linked repository truth for code behavior, but keep a visible **Knowledge Conflict**."
 
@@ -139,4 +165,7 @@ _Avoid_: merge, overwrite, silent correction
 - "agent messages" were discussed as possible vault content; resolved: messages stay in **Agent Messenger** unless an actor with write permission creates a **Vault Contribution**.
 - "daily update" was initially broad; resolved: daily updates are **Repository Daily Updates**, not people or department reports.
 - "repository daily update detail" was too broad; resolved: include meaningful commits, pull requests, and repository changes only.
+- "meaningful change" was vague; resolved: **Meaningful Source Changes** are source-linked changes around pull requests, merged work, repository momentum, blockers, decisions, reliability, architecture, or product behavior.
+- "org update" was broader than repository changes; resolved: an **Organization Update Digest** summarizes meaningful source-linked changes, features, decisions, and ongoing work from the **Organization Vault**.
+- "secret reporting" was initially mixed into the update digest; resolved: potential secrets and high-risk issues are **Security Findings**, redacted and handled separately from daily digests.
 - "conflicting knowledge" was unresolved; resolved: prefer newer source-linked repository truth for code behavior, while marking **Knowledge Conflicts** visibly.

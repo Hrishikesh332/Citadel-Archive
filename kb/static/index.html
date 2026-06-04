@@ -638,7 +638,7 @@
                 <div class="window-titlebar panel-heading">
                   <div>
                     <h2>Source Sync</h2>
-                    <p class="panel-kicker">Fetch, link, improve</p>
+                    <p class="panel-kicker">Fetch, digest, notify</p>
                   </div>
                   <span id="syncRunSummary" class="status-chip">Standby</span>
                 </div>
@@ -655,15 +655,29 @@
                   <input id="syncForce" type="checkbox" />
                   <span>Force full digest</span>
                 </label>
+                <label class="check-row" for="syncPostToChat">
+                  <input id="syncPostToChat" type="checkbox" />
+                  <span>Post digest to Google Chat</span>
+                </label>
                 <p id="syncError" class="form-error" role="alert"></p>
-                <button
-                  id="githubSyncButton"
-                  class="primary-button"
-                  data-min-role="admin"
-                  type="button"
-                >
-                  Run GitHub sync
-                </button>
+                <div class="button-stack">
+                  <button
+                    id="githubSyncButton"
+                    class="primary-button"
+                    data-min-role="admin"
+                    type="button"
+                  >
+                    Run learning agent
+                  </button>
+                  <button
+                    id="googleChatTestButton"
+                    class="secondary-button"
+                    data-min-role="admin"
+                    type="button"
+                  >
+                    Send Google Chat test
+                  </button>
+                </div>
                 <div id="syncResult" class="sync-result" aria-live="polite"></div>
               </section>
 

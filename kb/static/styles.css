@@ -785,6 +785,7 @@ h3 {
 .source-meta dd,
 .result-grid dd {
   margin: 2px 0 0;
+  overflow-wrap: anywhere;
   font-family: var(--mono);
   font-size: 18px;
   font-variant-numeric: tabular-nums;
@@ -792,6 +793,17 @@ h3 {
 
 .source-meta {
   margin-top: 12px;
+}
+
+.digest-preview {
+  max-height: 280px;
+  margin: 12px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .source-link {
@@ -1133,6 +1145,11 @@ textarea[aria-invalid="true"] {
   width: 18px;
   height: 18px;
   accent-color: var(--primary);
+}
+
+.button-stack {
+  display: grid;
+  gap: 8px;
 }
 
 .score-options {

@@ -40,6 +40,13 @@ def _timeout() -> int:
         return 900
 
 
+def _output_mode() -> str:
+    raw = os.getenv("CITADEL_GITHUB_SYNC_OUTPUT_MODE", "summary").strip().lower()
+    if raw in {"none", "summary", "full"}:
+        return raw
+    return "summary"
+
+
 def _target_endpoint() -> str | None:
     target = (
         os.getenv("CITADEL_GITHUB_SYNC_ENDPOINT")
@@ -93,29 +100,106 @@ def _post_json(
         return 599, {"detail": str(exc.reason)}
 
 
-async def _run_local(force: bool, dry_run: bool) -> dict[str, Any]:
+def _github_result(result: dict[str, Any]) -> dict[str, Any]:
+    github = (result.get("sources") or {}).get("github")
+    return github if isinstance(github, dict) else result
+
+
+async def _run_local(
+    force: bool,
+    dry_run: bool,
+    post_to_chat: bool,
+    include_digest_preview: bool,
+) -> dict[str, Any]:
     from kb.learning_agent import LearningAgent
 
-    return await LearningAgent.from_env().run(force=force, dry_run=dry_run)
+    return await LearningAgent.from_env().run(
+        force=force,
+        dry_run=dry_run,
+        post_to_chat=post_to_chat,
+        include_digest_preview=include_digest_preview,
+    )
 
 
 def _log_result(result: dict[str, Any]) -> None:
-    github = result.get("sources", {}).get("github", {})
+    github = _github_result(result)
+    security_scan = github.get("security_scan") or {}
     logger.info(
-        "GitHub sync complete: repos=%s changed=%s events=%s commits=%s ingested=%s improved=%s",
+        (
+            "GitHub sync complete: repos=%s changed=%s events=%s commits=%s "
+            "open_prs=%s merged_prs=%s security_blocked=%s findings=%s "
+            "ingested=%s improved=%s chat=%s"
+        ),
         github.get("repos_scanned"),
         github.get("changed_count"),
         github.get("event_count"),
         github.get("commit_count"),
+        github.get("open_pull_request_count"),
+        github.get("merged_pull_request_count"),
+        security_scan.get("blocked"),
+        security_scan.get("finding_count"),
         result.get("ingested", github.get("ingested")),
         result.get("improved", github.get("improved")),
+        (result.get("notifications") or {}).get("google_chat", {}).get("reason")
+        or (result.get("notifications") or {}).get("google_chat", {}).get("status_category"),
     )
+
+
+def _public_summary(result: dict[str, Any]) -> dict[str, Any]:
+    github = _github_result(result)
+    google_chat = (result.get("notifications") or {}).get("google_chat") or {}
+    security_scan = github.get("security_scan") or {}
+    return {
+        "ok": result.get("ok"),
+        "dry_run": result.get("dry_run", github.get("dry_run")),
+        "ingested": result.get("ingested", github.get("ingested")),
+        "improved": result.get("improved", github.get("improved")),
+        "github": {
+            "repos_scanned": github.get("repos_scanned"),
+            "changed_count": github.get("changed_count"),
+            "event_count": github.get("event_count"),
+            "commit_count": github.get("commit_count"),
+            "open_pull_request_count": github.get("open_pull_request_count"),
+            "merged_pull_request_count": github.get("merged_pull_request_count"),
+        },
+        "security_scan": {
+            "ok": security_scan.get("ok"),
+            "blocked": security_scan.get("blocked"),
+            "highest_severity": security_scan.get("highest_severity"),
+            "finding_count": security_scan.get("finding_count"),
+        },
+        "google_chat": {
+            "sent": google_chat.get("sent"),
+            "reason": google_chat.get("reason"),
+            "status_category": google_chat.get("status_category"),
+        },
+    }
+
+
+def _print_result(result: dict[str, Any]) -> None:
+    mode = _output_mode()
+    if mode == "none":
+        return
+    if mode == "full":
+        print(json.dumps(result, indent=2, default=str))
+        return
+    print(json.dumps(_public_summary(result), indent=2, default=str))
 
 
 def run() -> int:
     force = _bool(os.getenv("CITADEL_GITHUB_SYNC_FORCE"), default=False)
     dry_run = _bool(os.getenv("CITADEL_GITHUB_SYNC_DRY_RUN"), default=False)
-    payload = {"force": force, "dry_run": dry_run}
+    post_to_chat = _bool(os.getenv("CITADEL_ORG_DIGEST_POST_TO_CHAT"), default=True)
+    include_digest_preview = _bool(
+        os.getenv("CITADEL_ORG_DIGEST_INCLUDE_PREVIEW_IN_CRON_OUTPUT"),
+        default=False,
+    )
+    payload = {
+        "force": force,
+        "dry_run": dry_run,
+        "post_to_chat": post_to_chat,
+        "include_digest_preview": include_digest_preview,
+    }
     endpoint = _target_endpoint()
 
     if endpoint:
@@ -134,18 +218,29 @@ def run() -> int:
             timeout=_timeout(),
         )
         if status_code >= 400:
-            logger.error("GitHub sync failed with HTTP %s: %s", status_code, result)
+            logger.error(
+                "GitHub sync failed with HTTP %s: %s",
+                status_code,
+                _public_summary(result),
+            )
             return 1
     else:
         logger.info("Starting scheduled GitHub sync in-process")
-        result = asyncio.run(_run_local(force=force, dry_run=dry_run))
+        result = asyncio.run(
+            _run_local(
+                force=force,
+                dry_run=dry_run,
+                post_to_chat=post_to_chat,
+                include_digest_preview=include_digest_preview,
+            )
+        )
 
     if result.get("ok") is False:
-        logger.error("GitHub sync failed: %s", result)
+        logger.error("GitHub sync failed: %s", _public_summary(result))
         return 1
 
     _log_result(result)
-    print(json.dumps(result, indent=2, default=str))
+    _print_result(result)
     return 0
 
 

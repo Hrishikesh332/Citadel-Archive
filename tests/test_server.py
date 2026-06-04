@@ -97,7 +97,14 @@ class FakeLearningAgent:
             "capabilities": ["summarize_recent_commits"],
         }
 
-    async def run(self, *, force: bool = False, dry_run: bool = False) -> dict[str, Any]:
+    async def run(
+        self,
+        *,
+        force: bool = False,
+        dry_run: bool = False,
+        post_to_chat: bool = False,
+        include_digest_preview: bool = True,
+    ) -> dict[str, Any]:
         return {
             "ok": True,
             "agent": "citadel-learning-agent",
@@ -110,6 +117,28 @@ class FakeLearningAgent:
             "ingested": not dry_run,
             "improved": not dry_run,
             "dry_run": dry_run,
+            "organization_digest": {
+                "enabled": True,
+                "meaningful": True,
+                **({"preview": "Digest preview"} if include_digest_preview else {}),
+            },
+            "notifications": {
+                "google_chat": {
+                    "enabled": True,
+                    "sent": post_to_chat,
+                    "reason": None if post_to_chat else "preview_only",
+                }
+            },
+        }
+
+    async def test_google_chat_delivery(self, message: str | None = None) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "enabled": True,
+            "sent": True,
+            "status_category": "success",
+            "message_name": "spaces/AAA/messages/BBB",
+            "thread_name": "spaces/AAA/threads/T",
         }
 
 
@@ -324,6 +353,8 @@ def test_ui_shell_is_served_after_login() -> None:
     assert "Citadel Archive" in response.text
     assert "Citadel Vault" in response.text
     assert "Source Sync" in response.text
+    assert "Run learning agent" in response.text
+    assert "Send Google Chat test" in response.text
     assert "Obsidian Vaults" in response.text
     assert "mcp-remote" in response.text
     assert "Audit event filter" in response.text
@@ -389,6 +420,30 @@ def test_bearer_tokens_can_access_api_without_cookie(tmp_path: Any) -> None:
     assert session.json()["role"] == "writer"
     assert ingest.status_code == 200
     assert admin_run.status_code == 403
+
+
+def test_google_chat_test_delivery_is_admin_only_and_redacted(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    reader = authed_client("test-reader")
+
+    denied = reader.post("/api/learning-agent/google-chat/test", json={})
+    response = admin.post(
+        "/api/learning-agent/google-chat/test",
+        json={"message": "custom rollout smoke test"},
+    )
+
+    assert denied.status_code == 403
+    assert response.status_code == 200
+    assert response.json()["sent"] is True
+    events = app.state.access_store.snapshot()["audit_events"]
+    event = events[-1]
+    serialized = str(event)
+    assert event["action"] == "learning_agent.google_chat_test"
+    assert event["success"] is True
+    assert event["detail"]["status_category"] == "success"
+    assert event["detail"]["message_name"] == "spaces/AAA/messages/BBB"
+    assert "custom rollout smoke test" not in serialized
 
 
 def test_custom_token_scopes_are_enforced(tmp_path: Any) -> None:

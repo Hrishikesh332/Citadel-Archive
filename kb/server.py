@@ -171,6 +171,12 @@ class GitHubSyncBody(BaseModel):
 class LearningAgentRunBody(BaseModel):
     force: bool = False
     dry_run: bool = False
+    post_to_chat: bool = False
+    include_digest_preview: bool = True
+
+
+class GoogleChatTestBody(BaseModel):
+    message: str | None = Field(default=None, min_length=1, max_length=400)
 
 
 class BackupMirrorRunBody(BaseModel):
@@ -1263,14 +1269,24 @@ async def run_learning_agent(body: LearningAgentRunBody, request: Request) -> An
     citadel = get_citadel()
     mesh_state = get_mesh()
     try:
-        result = await get_learning_agent().run(force=body.force, dry_run=body.dry_run)
+        result = await get_learning_agent().run(
+            force=body.force,
+            dry_run=body.dry_run,
+            post_to_chat=body.post_to_chat,
+            include_digest_preview=body.include_digest_preview,
+        )
     except Exception as exc:  # pragma: no cover - depends on external sources and Cognee config.
         await mesh_state.record_error(citadel.config, operation="learning_agent", error=str(exc))
         get_access_store().record_event(
             action="learning_agent.run",
             actor=actor,
             success=False,
-            detail={"force": body.force, "dry_run": body.dry_run, "error": str(exc)},
+            detail={
+                "force": body.force,
+                "dry_run": body.dry_run,
+                "post_to_chat": body.post_to_chat,
+                "error": str(exc),
+            },
         )
         record_mcp_audit(
             request,
@@ -1281,6 +1297,7 @@ async def run_learning_agent(body: LearningAgentRunBody, request: Request) -> An
                 "operation": "learning_agent.run",
                 "force": body.force,
                 "dry_run": body.dry_run,
+                "post_to_chat": body.post_to_chat,
                 "error_type": exc.__class__.__name__,
             },
         )
@@ -1296,8 +1313,13 @@ async def run_learning_agent(body: LearningAgentRunBody, request: Request) -> An
         detail={
             "force": body.force,
             "dry_run": body.dry_run,
+            "post_to_chat": body.post_to_chat,
             "ingested": result.get("ingested"),
             "improved": result.get("improved"),
+            "digest_meaningful": (result.get("organization_digest") or {}).get("meaningful"),
+            "google_chat_sent": (
+                (result.get("notifications") or {}).get("google_chat") or {}
+            ).get("sent"),
         },
     )
     record_mcp_audit(
@@ -1309,8 +1331,44 @@ async def run_learning_agent(body: LearningAgentRunBody, request: Request) -> An
             "operation": "learning_agent.run",
             "force": body.force,
             "dry_run": body.dry_run,
+            "post_to_chat": body.post_to_chat,
             "ingested": result.get("ingested"),
             "improved": result.get("improved"),
+            "digest_meaningful": (result.get("organization_digest") or {}).get("meaningful"),
+            "google_chat_sent": (
+                (result.get("notifications") or {}).get("google_chat") or {}
+            ).get("sent"),
+        },
+    )
+    return jsonable_encoder(result)
+
+
+@app.post("/api/learning-agent/google-chat/test")
+async def test_learning_agent_google_chat(body: GoogleChatTestBody, request: Request) -> Any:
+    actor = require_access(request, "admin", "sources:sync")
+    result = await get_learning_agent().test_google_chat_delivery(message=body.message)
+    detail = {
+        "sent": result.get("sent"),
+        "reason": result.get("reason"),
+        "status_category": result.get("status_category"),
+        "status_code": result.get("status_code"),
+        "message_name": result.get("message_name"),
+        "thread_name": result.get("thread_name"),
+    }
+    get_access_store().record_event(
+        action="learning_agent.google_chat_test",
+        actor=actor,
+        success=bool(result.get("sent")),
+        detail={key: value for key, value in detail.items() if value is not None},
+    )
+    record_mcp_audit(
+        request,
+        actor=actor,
+        success=bool(result.get("sent")),
+        dataset=get_citadel().config.github_sync_dataset,
+        detail={
+            "operation": "learning_agent.google_chat_test",
+            **{key: value for key, value in detail.items() if value is not None},
         },
     )
     return jsonable_encoder(result)

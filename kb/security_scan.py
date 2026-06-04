@@ -1,0 +1,341 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import ipaddress
+import re
+from typing import Iterable
+from urllib.parse import urlsplit
+
+
+SEVERITY_ORDER = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+URL_SHORTENER_DOMAINS = {
+    "bit.ly",
+    "buff.ly",
+    "cutt.ly",
+    "goo.gl",
+    "is.gd",
+    "lnkd.in",
+    "ow.ly",
+    "rebrand.ly",
+    "shorturl.at",
+    "t.co",
+    "tiny.cc",
+    "tinyurl.com",
+}
+
+SECRET_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    (
+        "github_token",
+        "critical",
+        re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,}\b"),
+    ),
+    (
+        "github_fine_grained_token",
+        "critical",
+        re.compile(r"\bgithub_pat_[A-Za-z0-9_]{40,}\b"),
+    ),
+    (
+        "openai_or_llm_key",
+        "critical",
+        re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}\b"),
+    ),
+    (
+        "aws_access_key",
+        "critical",
+        re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    ),
+    (
+        "stripe_live_secret",
+        "critical",
+        re.compile(r"\bsk_live_[A-Za-z0-9]{16,}\b"),
+    ),
+    (
+        "slack_token",
+        "critical",
+        re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+    ),
+    (
+        "private_key_marker",
+        "critical",
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    ),
+    (
+        "secret_assignment",
+        "high",
+        re.compile(
+            r"(?i)\b(?:api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*['\"]?([^\s'\"]{8,})"
+        ),
+    ),
+)
+
+URL_PATTERN = re.compile(r"https?://[^\s<>'\"`]+", re.IGNORECASE)
+RISKY_SCHEME_PATTERN = re.compile(r"(?i)\b(?:javascript|data|vbscript):|file://")
+BIDI_CONTROL_CODES = {
+    "\u202a",
+    "\u202b",
+    "\u202c",
+    "\u202d",
+    "\u202e",
+    "\u2066",
+    "\u2067",
+    "\u2068",
+    "\u2069",
+}
+
+
+@dataclass(frozen=True)
+class SecurityScanEntry:
+    source: str
+    location: str
+    text: str
+
+
+@dataclass(frozen=True)
+class SecurityScanFinding:
+    severity: str
+    category: str
+    source: str
+    location: str
+    summary: str
+    fingerprint: str
+    evidence: str | None = None
+
+    def public_dict(self) -> dict[str, str | None]:
+        return {
+            "severity": self.severity,
+            "category": self.category,
+            "source": self.source,
+            "location": self.location,
+            "summary": self.summary,
+            "fingerprint": self.fingerprint,
+            "evidence": self.evidence,
+        }
+
+
+def scan_text_entries(
+    entries: Iterable[SecurityScanEntry],
+    *,
+    block_severity: str = "high",
+) -> dict[str, object]:
+    findings: list[SecurityScanFinding] = []
+    seen: set[str] = set()
+    threshold = _severity_score(block_severity)
+
+    for entry in entries:
+        for finding in _scan_entry(entry):
+            if finding.fingerprint in seen:
+                continue
+            seen.add(finding.fingerprint)
+            findings.append(finding)
+
+    findings.sort(
+        key=lambda item: (_severity_score(item.severity), item.category, item.location),
+        reverse=True,
+    )
+    highest = findings[0].severity if findings else None
+    blocked = any(_severity_score(finding.severity) >= threshold for finding in findings)
+    return {
+        "ok": not blocked,
+        "blocked": blocked,
+        "block_severity": _normal_severity(block_severity),
+        "highest_severity": highest,
+        "finding_count": len(findings),
+        "findings": [finding.public_dict() for finding in findings[:25]],
+    }
+
+
+def _scan_entry(entry: SecurityScanEntry) -> list[SecurityScanFinding]:
+    text = entry.text or ""
+    findings: list[SecurityScanFinding] = []
+    findings.extend(_scan_secrets(entry, text))
+    findings.extend(_scan_urls(entry, text))
+    findings.extend(_scan_corruption_markers(entry, text))
+    return findings
+
+
+def _scan_secrets(entry: SecurityScanEntry, text: str) -> list[SecurityScanFinding]:
+    findings: list[SecurityScanFinding] = []
+    for category, severity, pattern in SECRET_PATTERNS:
+        for match in pattern.finditer(text):
+            findings.append(
+                _finding(
+                    severity=severity,
+                    category=category,
+                    source=entry.source,
+                    location=entry.location,
+                    summary="Potential secret found in GitHub metadata; raw value redacted.",
+                    evidence=f"pattern={category}",
+                    raw=f"{category}:{match.group(0)}",
+                )
+            )
+    return findings
+
+
+def _scan_urls(entry: SecurityScanEntry, text: str) -> list[SecurityScanFinding]:
+    findings: list[SecurityScanFinding] = []
+    if RISKY_SCHEME_PATTERN.search(text):
+        findings.append(
+            _finding(
+                severity="high",
+                category="unsafe_url_scheme",
+                source=entry.source,
+                location=entry.location,
+                summary="Potentially unsafe URL scheme found in GitHub metadata.",
+                evidence="scheme=unsafe",
+                raw=f"unsafe-scheme:{text}",
+            )
+        )
+
+    for match in URL_PATTERN.finditer(text):
+        url = _strip_url(match.group(0))
+        url_findings = _classify_url(url)
+        for category, severity, evidence, raw in url_findings:
+            findings.append(
+                _finding(
+                    severity=severity,
+                    category=category,
+                    source=entry.source,
+                    location=entry.location,
+                    summary="Potentially risky URL found in GitHub metadata.",
+                    evidence=evidence,
+                    raw=raw,
+                )
+            )
+    return findings
+
+
+def _scan_corruption_markers(entry: SecurityScanEntry, text: str) -> list[SecurityScanFinding]:
+    findings: list[SecurityScanFinding] = []
+    for char in text:
+        if char in BIDI_CONTROL_CODES:
+            findings.append(
+                _finding(
+                    severity="high",
+                    category="unicode_bidi_control",
+                    source=entry.source,
+                    location=entry.location,
+                    summary="Bidirectional control character found in GitHub metadata.",
+                    evidence=f"codepoint=U+{ord(char):04X}",
+                    raw=f"bidi:{ord(char):04X}:{entry.location}",
+                )
+            )
+            break
+        if char == "\ufffd":
+            findings.append(
+                _finding(
+                    severity="medium",
+                    category="unicode_replacement_character",
+                    source=entry.source,
+                    location=entry.location,
+                    summary="Unicode replacement character suggests malformed or corrupted text.",
+                    evidence="codepoint=U+FFFD",
+                    raw=f"replacement:{entry.location}",
+                )
+            )
+            break
+        if ord(char) < 32 and char not in {"\n", "\r", "\t"}:
+            findings.append(
+                _finding(
+                    severity="high",
+                    category="control_character",
+                    source=entry.source,
+                    location=entry.location,
+                    summary="Unexpected control character found in GitHub metadata.",
+                    evidence=f"codepoint=U+{ord(char):04X}",
+                    raw=f"control:{ord(char):04X}:{entry.location}",
+                )
+            )
+            break
+    return findings
+
+
+def _classify_url(url: str) -> list[tuple[str, str, str, str]]:
+    findings: list[tuple[str, str, str, str]] = []
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return [("malformed_url", "medium", "url=malformed", f"malformed:{url}")]
+
+    host = (parts.hostname or "").lower()
+    if not host:
+        return [("malformed_url", "medium", "host=missing", f"missing-host:{url}")]
+
+    if parts.username or parts.password or "@" in parts.netloc:
+        findings.append(
+            (
+                "credentialed_or_misleading_url",
+                "high",
+                f"domain={host}",
+                f"credentialed:{host}:{parts.path}",
+            )
+        )
+    if "xn--" in host:
+        findings.append(("punycode_domain", "medium", f"domain={host}", f"punycode:{host}"))
+    if host in URL_SHORTENER_DOMAINS:
+        findings.append(("url_shortener", "medium", f"domain={host}", f"shortener:{host}"))
+    if _is_ip_literal(host):
+        findings.append(("ip_literal_url", "medium", "host=ip_literal", f"ip:{host}"))
+    if len(url) > 2048:
+        findings.append(("oversized_url", "medium", f"domain={host}", f"oversized:{host}"))
+    return findings
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def _strip_url(url: str) -> str:
+    return url.rstrip(".,;:!?)]}")
+
+
+def _finding(
+    *,
+    severity: str,
+    category: str,
+    source: str,
+    location: str,
+    summary: str,
+    evidence: str | None,
+    raw: str,
+) -> SecurityScanFinding:
+    return SecurityScanFinding(
+        severity=_normal_severity(severity),
+        category=category,
+        source=source,
+        location=_short_text(location, 140),
+        summary=summary,
+        evidence=evidence,
+        fingerprint=_fingerprint(category, source, location, raw),
+    )
+
+
+def _fingerprint(category: str, source: str, location: str, raw: str) -> str:
+    digest = hashlib.sha256(f"{category}|{source}|{location}|{raw}".encode("utf-8")).hexdigest()
+    return digest[:24]
+
+
+def _normal_severity(value: str) -> str:
+    text = (value or "").strip().lower()
+    return text if text in SEVERITY_ORDER else "high"
+
+
+def _severity_score(value: str | None) -> int:
+    return SEVERITY_ORDER.get(_normal_severity(value or "high"), SEVERITY_ORDER["high"])
+
+
+def _short_text(value: str, length: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= length:
+        return text
+    return f"{text[: length - 1]}."

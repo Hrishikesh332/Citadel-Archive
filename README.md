@@ -203,6 +203,7 @@ Core API endpoints:
 - `POST /api/self-upgrade`
 - `POST /api/github-sync/run`
 - `POST /api/learning-agent/run`
+- `POST /api/learning-agent/google-chat/test`
 
 ## Citadel UI
 
@@ -308,10 +309,12 @@ uv run python -m kb.learning_agent --status
 
 ## GitHub Organization Sync
 
-Citadel can fetch public repository activity from a GitHub organization, format
-it as a daily digest, add recent commit summaries for changed repositories,
-ingest that digest into Cognee, and run improvement for the configured sync
-session.
+Citadel can fetch repository activity from a GitHub organization, format it as a
+daily digest, add recent commit summaries for changed repositories, ingest that
+digest into Cognee, and run improvement for the configured sync session. When a
+GitHub token can see private repositories, treat the sync as sensitive metadata.
+See [`docs/private-github-sync-security.md`](docs/private-github-sync-security.md)
+before enabling private repo access.
 
 Default sync target:
 
@@ -321,7 +324,14 @@ CITADEL_GITHUB_SYNC_DATASET=masumi-network
 CITADEL_GITHUB_SYNC_SESSION=masumi-github-daily
 CITADEL_GITHUB_SYNC_STATE_PATH=/data/.citadel/github_sync_state.json
 CITADEL_GITHUB_SYNC_MAX_COMMITS_PER_REPO=5
+CITADEL_GITHUB_SYNC_MAX_PULL_REQUESTS_PER_REPO=5
 CITADEL_GITHUB_SYNC_INCLUDE_COMMITS=true
+CITADEL_GITHUB_SYNC_INCLUDE_PRIVATE=true
+CITADEL_GITHUB_SYNC_REPO_ALLOWLIST=
+CITADEL_GITHUB_SYNC_REPO_DENYLIST=
+CITADEL_GITHUB_SYNC_SECURITY_SCAN_ENABLED=true
+CITADEL_GITHUB_SYNC_SECURITY_BLOCK_SEVERITY=high
+CITADEL_GITHUB_SYNC_OUTPUT_MODE=summary
 ```
 
 Use `GITHUB_TOKEN` or `CITADEL_GITHUB_TOKEN` for higher GitHub API limits or
@@ -337,8 +347,13 @@ For Railway, set the token on both services:
 CITADEL_GITHUB_TOKEN=github_pat_...
 ```
 
-Citadel requests GitHub organization repositories with `type=all`, so private
-repositories visible to the token are included alongside public repositories.
+Citadel requests GitHub organization repositories with `type=all` when
+`CITADEL_GITHUB_SYNC_INCLUDE_PRIVATE=true`, so private repositories visible to
+the token are included alongside public repositories. Use
+`CITADEL_GITHUB_SYNC_REPO_ALLOWLIST` and `CITADEL_GITHUB_SYNC_REPO_DENYLIST` to
+scope exactly what Citadel may learn from. The cron output defaults to a
+sanitized summary and the pre-ingest metadata scanner blocks high-severity
+secret, phishing-link, and corruption indicators before the digest is ingested.
 
 For OpenRouter, set either `LLM_API_KEY` or `OPENROUTER_API_KEY` and choose a
 concrete `LLM_MODEL` from the current OpenRouter model catalog. Citadel maps
@@ -346,6 +361,8 @@ concrete `LLM_MODEL` from the current OpenRouter model catalog. Citadel maps
 GitHub source sync does not require LLM improvement by default; enable
 `CITADEL_GITHUB_SYNC_RUN_IMPROVE=true` only when the configured LLM is known to
 work.
+Organization digest LLM summarization is disabled for private repository
+metadata unless `CITADEL_ORG_DIGEST_LLM_ALLOW_PRIVATE=true`.
 
 For Railway, create a second service from this repo with:
 
@@ -356,13 +373,64 @@ CITADEL_RUN_MODE=learning-agent
 and set its cron schedule to:
 
 ```cron
-0 3 * * *
+0 8 * * *
 ```
 
-That runs once every 24 hours at 03:00 UTC. The included `railway.toml` keeps
+That runs once every 24 hours at 08:00 UTC, which is 10:00 Europe/Berlin during
+summer time. If Railway cron remains UTC-only, adjust the cron expression when
+Berlin switches between CET and CEST. The included `railway.toml` keeps
 the web service as the default mode and switches to the learning-agent command
 when `CITADEL_RUN_MODE=learning-agent`. The older `github-sync` run mode still
 works for compatibility.
+
+## Google Chat Organization Update Digest
+
+Citadel can post an outbound-only **Organization Update Digest** to one
+dedicated Google Chat space after the learning-agent cron runs. See
+[`docs/google-chat-organization-update-digest-plan.md`](docs/google-chat-organization-update-digest-plan.md)
+and [ADR 0002](docs/adr/0002-google-chat-app-auth-for-update-digests.md).
+
+Phase 1 uses Google Chat API app authentication, not incoming webhooks. Configure
+these only on the Railway learning-agent service unless manual posting from the
+web service is needed. If `CITADEL_GITHUB_SYNC_TARGET_URL` points the cron at
+the web service, then the web service is the process that posts to Google Chat
+and must also have these Google Chat variables.
+
+Google-side setup:
+
+1. Enable the Google Chat API in the Google Cloud project for the Chat app.
+2. Configure the Chat app name, avatar, description, and org visibility.
+3. Create a service account in that project.
+4. Add the Chat app to the dedicated Google Chat space.
+5. Store the service account JSON as a Railway secret.
+6. Set `CITADEL_GOOGLE_CHAT_SPACE_NAME` to the target `spaces/...` resource.
+
+```bash
+CITADEL_ORG_DIGEST_ENABLED=true
+CITADEL_ORG_DIGEST_WINDOW_HOURS=24
+CITADEL_ORG_DIGEST_POST_TO_CHAT=true
+CITADEL_ORG_DIGEST_INCLUDE_PREVIEW_IN_CRON_OUTPUT=false
+CITADEL_GOOGLE_CHAT_ENABLED=true
+CITADEL_GOOGLE_CHAT_SPACE_NAME=spaces/...
+CITADEL_GOOGLE_CHAT_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+```
+
+Manual admin-triggered runs preview only by default. Add
+`{"post_to_chat": true}` to `POST /api/learning-agent/run` or use
+`uv run citadel learn --post-to-chat` when an explicit manual post is intended.
+
+After configuring the Chat app and Railway variables, send one controlled test
+message before enabling cron posting:
+
+```bash
+curl -fsS -X POST "$CITADEL_BASE_URL/api/learning-agent/google-chat/test" \
+  -H "Authorization: Bearer $CITADEL_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  --data '{"message":"Citadel Google Chat delivery test"}'
+```
+
+The test endpoint is admin-only and stores only sanitized delivery status in the
+audit log.
 
 ## Vault Backup Mirror
 

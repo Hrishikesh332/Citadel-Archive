@@ -37,6 +37,8 @@ const syncTrackedRepos = document.getElementById("syncTrackedRepos");
 const githubSourceLink = document.getElementById("githubSourceLink");
 const syncRunSummary = document.getElementById("syncRunSummary");
 const syncResult = document.getElementById("syncResult");
+const syncPostToChat = document.getElementById("syncPostToChat");
+const googleChatTestButton = document.getElementById("googleChatTestButton");
 const obsidianVaultCount = document.getElementById("obsidianVaultCount");
 const obsidianDocumentCount = document.getElementById("obsidianDocumentCount");
 const obsidianSourceStatus = document.getElementById("obsidianSourceStatus");
@@ -1787,6 +1789,29 @@ function renderSettingsMirror(mirror) {
   });
 }
 
+function renderLearningAgentRun(result) {
+  const github = result.sources?.github || {};
+  const digest = result.organization_digest || {};
+  const chat = result.notifications?.google_chat || {};
+  const chatLabel = chat.sent
+    ? "sent"
+    : chat.reason || chat.status_category || (chat.enabled ? "ready" : "disabled");
+  const preview = digest.preview
+    ? `<pre class="digest-preview">${escapeHtml(digest.preview)}</pre>`
+    : "";
+  syncResult.innerHTML = `
+    <dl class="result-grid">
+      <div><dt>Repos scanned</dt><dd>${escapeHtml(github.repos_scanned || 0)}</dd></div>
+      <div><dt>Changed</dt><dd>${escapeHtml(github.changed_count || 0)}</dd></div>
+      <div><dt>Open PRs</dt><dd>${escapeHtml(github.open_pull_request_count || 0)}</dd></div>
+      <div><dt>Merged PRs</dt><dd>${escapeHtml(github.merged_pull_request_count || 0)}</dd></div>
+      <div><dt>Digest</dt><dd>${digest.meaningful ? "Meaningful" : "Quiet"}</dd></div>
+      <div><dt>Google Chat</dt><dd>${escapeHtml(chatLabel)}</dd></div>
+    </dl>
+    ${preview}
+  `;
+}
+
 function renderDashboardMcpAccess(snapshot) {
   if (!dashboardMcpList || !dashboardMcpClients) return;
   const activeTokens = (snapshot.tokens || []).filter((token) => !token.revoked_at);
@@ -1957,35 +1982,71 @@ document.getElementById("githubSyncButton").addEventListener("click", async (eve
   const button = event.currentTarget;
   const error = document.getElementById("syncError");
   const force = document.getElementById("syncForce").checked;
+  const postToChat = Boolean(syncPostToChat?.checked);
   error.textContent = "";
   syncResult.innerHTML = "";
   syncRunSummary.textContent = "Running";
   syncRunSummary.className = "status-chip status-standby";
-  setBusy(button, true, { idle: "Run GitHub sync", loading: "Syncing" });
+  setBusy(button, true, { idle: "Run learning agent", loading: "Running" });
   try {
-    const result = await api("/api/github-sync/run", {
+    const result = await api("/api/learning-agent/run", {
       method: "POST",
-      body: JSON.stringify({ force }),
+      body: JSON.stringify({
+        force,
+        post_to_chat: postToChat,
+        include_digest_preview: true,
+      }),
     });
-    syncRunSummary.textContent = result.ingested ? "Updated" : "Checked";
+    const chat = result.notifications?.google_chat || {};
+    syncRunSummary.textContent = chat.sent ? "Posted" : result.ingested ? "Updated" : "Checked";
     syncRunSummary.className = "status-chip status-enabled";
-    syncResult.innerHTML = `
-      <dl class="result-grid">
-        <div><dt>Repos scanned</dt><dd>${escapeHtml(result.repos_scanned)}</dd></div>
-        <div><dt>Changed</dt><dd>${escapeHtml(result.changed_count)}</dd></div>
-        <div><dt>Events</dt><dd>${escapeHtml(result.event_count)}</dd></div>
-        <div><dt>Improved</dt><dd>${result.improved ? "Yes" : "No"}</dd></div>
-      </dl>
-    `;
+    renderLearningAgentRun(result);
     await Promise.all([loadMesh(false), loadGithubSync()]);
   } catch (err) {
     error.textContent = err.message;
     syncRunSummary.textContent = "Failed";
     syncRunSummary.className = "status-chip status-error";
   } finally {
-    setBusy(button, false, { idle: "Run GitHub sync", loading: "Syncing" });
+    setBusy(button, false, { idle: "Run learning agent", loading: "Running" });
   }
 });
+
+if (googleChatTestButton) {
+  googleChatTestButton.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const error = document.getElementById("syncError");
+    error.textContent = "";
+    syncResult.innerHTML = "";
+    syncRunSummary.textContent = "Testing";
+    syncRunSummary.className = "status-chip status-standby";
+    setBusy(button, true, { idle: "Send Google Chat test", loading: "Sending" });
+    try {
+      const result = await api("/api/learning-agent/google-chat/test", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      syncRunSummary.textContent = result.sent ? "Test sent" : "Test skipped";
+      syncRunSummary.className = result.sent
+        ? "status-chip status-enabled"
+        : "status-chip status-error";
+      const status = result.reason || result.status_category || (result.sent ? "success" : "not sent");
+      syncResult.innerHTML = `
+        <dl class="result-grid">
+          <div><dt>Google Chat</dt><dd>${escapeHtml(status)}</dd></div>
+          <div><dt>Status</dt><dd>${escapeHtml(result.status_code || "n/a")}</dd></div>
+          <div><dt>Message</dt><dd>${escapeHtml(result.message_name || "n/a")}</dd></div>
+          <div><dt>Thread</dt><dd>${escapeHtml(result.thread_name || "n/a")}</dd></div>
+        </dl>
+      `;
+    } catch (err) {
+      error.textContent = err.message;
+      syncRunSummary.textContent = "Failed";
+      syncRunSummary.className = "status-chip status-error";
+    } finally {
+      setBusy(button, false, { idle: "Send Google Chat test", loading: "Sending" });
+    }
+  });
+}
 
 document.getElementById("obsidianVaultForm").addEventListener("submit", async (event) => {
   event.preventDefault();

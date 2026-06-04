@@ -107,10 +107,31 @@ class CitadelConfig:
     github_sync_max_repos: int = 100
     github_sync_max_events: int = 50
     github_sync_max_commits_per_repo: int = 5
+    github_sync_max_pull_requests_per_repo: int = 5
     github_sync_include_commits: bool = True
     github_sync_run_improve: bool = False
     github_sync_ingest_unchanged: bool = True
+    github_sync_include_private: bool = True
+    github_sync_repo_allowlist: tuple[str, ...] = field(default_factory=tuple)
+    github_sync_repo_denylist: tuple[str, ...] = field(default_factory=tuple)
+    github_sync_security_scan_enabled: bool = True
+    github_sync_security_block_severity: str = "high"
     github_token: str | None = None
+    organization_digest_enabled: bool = True
+    organization_digest_window_hours: int = 24
+    organization_digest_max_items: int = 6
+    organization_digest_llm_enabled: bool = True
+    organization_digest_llm_allow_private: bool = False
+    organization_digest_post_on_no_updates: bool = False
+    google_chat_enabled: bool = False
+    google_chat_space_name: str | None = None
+    google_chat_service_account_json: str | None = None
+    google_chat_service_account_file: str | None = None
+    google_chat_thread_key: str = "citadel-org-digest"
+    google_chat_message_prefix: str = "citadel-org-digest"
+    google_chat_max_message_bytes: int = 30000
+    google_chat_timeout_seconds: int = 20
+    google_chat_retry_count: int = 2
     backup_mirror_repo: str = "masumi-network/Vault-Backup-Mirror"
     backup_mirror_enabled: bool = False
     backup_mirror_push_enabled: bool = False
@@ -155,6 +176,10 @@ class CitadelConfig:
                 os.getenv("CITADEL_GITHUB_SYNC_MAX_COMMITS_PER_REPO"),
                 default=5,
             ),
+            github_sync_max_pull_requests_per_repo=_int(
+                os.getenv("CITADEL_GITHUB_SYNC_MAX_PULL_REQUESTS_PER_REPO"),
+                default=5,
+            ),
             github_sync_include_commits=_bool(
                 os.getenv("CITADEL_GITHUB_SYNC_INCLUDE_COMMITS"),
                 default=True,
@@ -164,7 +189,77 @@ class CitadelConfig:
                 os.getenv("CITADEL_GITHUB_SYNC_INGEST_UNCHANGED"),
                 default=True,
             ),
+            github_sync_include_private=_bool(
+                os.getenv("CITADEL_GITHUB_SYNC_INCLUDE_PRIVATE"),
+                default=True,
+            ),
+            github_sync_repo_allowlist=tuple(
+                _csv(os.getenv("CITADEL_GITHUB_SYNC_REPO_ALLOWLIST"))
+            ),
+            github_sync_repo_denylist=tuple(
+                _csv(os.getenv("CITADEL_GITHUB_SYNC_REPO_DENYLIST"))
+            ),
+            github_sync_security_scan_enabled=_bool(
+                os.getenv("CITADEL_GITHUB_SYNC_SECURITY_SCAN_ENABLED"),
+                default=True,
+            ),
+            github_sync_security_block_severity=os.getenv(
+                "CITADEL_GITHUB_SYNC_SECURITY_BLOCK_SEVERITY",
+                "high",
+            ),
             github_token=os.getenv("CITADEL_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN") or None,
+            organization_digest_enabled=_bool(
+                os.getenv("CITADEL_ORG_DIGEST_ENABLED"),
+                default=True,
+            ),
+            organization_digest_window_hours=_int(
+                os.getenv("CITADEL_ORG_DIGEST_WINDOW_HOURS"),
+                default=24,
+            ),
+            organization_digest_max_items=_int(
+                os.getenv("CITADEL_ORG_DIGEST_MAX_ITEMS"),
+                default=6,
+            ),
+            organization_digest_llm_enabled=_bool(
+                os.getenv("CITADEL_ORG_DIGEST_LLM_ENABLED"),
+                default=True,
+            ),
+            organization_digest_llm_allow_private=_bool(
+                os.getenv("CITADEL_ORG_DIGEST_LLM_ALLOW_PRIVATE"),
+                default=False,
+            ),
+            organization_digest_post_on_no_updates=_bool(
+                os.getenv("CITADEL_ORG_DIGEST_POST_ON_NO_UPDATES"),
+                default=False,
+            ),
+            google_chat_enabled=_bool(os.getenv("CITADEL_GOOGLE_CHAT_ENABLED"), default=False),
+            google_chat_space_name=os.getenv("CITADEL_GOOGLE_CHAT_SPACE_NAME") or None,
+            google_chat_service_account_json=(
+                os.getenv("CITADEL_GOOGLE_CHAT_SERVICE_ACCOUNT_JSON") or None
+            ),
+            google_chat_service_account_file=(
+                os.getenv("CITADEL_GOOGLE_CHAT_SERVICE_ACCOUNT_FILE") or None
+            ),
+            google_chat_thread_key=os.getenv(
+                "CITADEL_GOOGLE_CHAT_THREAD_KEY",
+                "citadel-org-digest",
+            ),
+            google_chat_message_prefix=os.getenv(
+                "CITADEL_GOOGLE_CHAT_MESSAGE_PREFIX",
+                "citadel-org-digest",
+            ),
+            google_chat_max_message_bytes=_int(
+                os.getenv("CITADEL_GOOGLE_CHAT_MAX_MESSAGE_BYTES"),
+                default=30000,
+            ),
+            google_chat_timeout_seconds=_int(
+                os.getenv("CITADEL_GOOGLE_CHAT_TIMEOUT_SECONDS"),
+                default=20,
+            ),
+            google_chat_retry_count=_int(
+                os.getenv("CITADEL_GOOGLE_CHAT_RETRY_COUNT"),
+                default=2,
+            ),
             backup_mirror_repo=os.getenv(
                 "CITADEL_BACKUP_MIRROR_REPO",
                 "masumi-network/Vault-Backup-Mirror",

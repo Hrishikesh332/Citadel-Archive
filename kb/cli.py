@@ -78,6 +78,8 @@ async def _learn(args: argparse.Namespace) -> None:
     result = await agent.status() if args.status else await agent.run(
         force=args.force,
         dry_run=args.dry_run,
+        post_to_chat=args.post_to_chat,
+        include_digest_preview=not args.hide_digest_preview,
     )
     _print_json(result)
 
@@ -136,6 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
     learn.add_argument("--status", action="store_true")
     learn.add_argument("--force", action="store_true")
     learn.add_argument("--dry-run", action="store_true")
+    learn.add_argument("--post-to-chat", action="store_true")
+    learn.add_argument("--hide-digest-preview", action="store_true")
     learn.set_defaults(handler=_learn)
 
     return parser
