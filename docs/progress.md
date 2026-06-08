@@ -31,6 +31,14 @@ Last updated: 2026-06-08.
     path.
 - Fixed a time-sensitive GitHub sync PR test whose hard-coded June 3 PR
   timestamps had fallen outside its 48-hour window by June 8, 2026.
+- Corrected the Agent Messenger boundary:
+  - Reverted the Citadel Agent Messenger bridge/API/config commits because
+    Citadel should remain shared memory, not a messaging agent.
+  - Moved Agent Messenger delivery responsibility to Scout, where the update
+    agent owns outbound gateway communication.
+  - Updated the external-agent architecture note to name Agent Messenger as a
+    Scout-owned gateway and state that Citadel should not become an Agent
+    Messenger actor.
 - Verified Citadel with `uv run pytest` and focused `uv run ruff check`.
 
 ## 2026-06-04

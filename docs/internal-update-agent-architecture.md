@@ -19,8 +19,8 @@ part of the Citadel Archive repository long term.
 - Source providers that compose GitHub, Citadel search, and future approved
   company sources.
 - Digest policy and prompt/versioning.
-- Delivery gateway adapters such as Google Chat, Slack, email, webhook, or other
-  internal surfaces.
+- Delivery gateway adapters such as Google Chat, Agent Messenger, Slack, email,
+  webhook, or other internal surfaces.
 - Retry, dedupe, and posting state for outbound messages.
 
 ## Initial Contract
@@ -112,3 +112,5 @@ citadel-update-agent/
 - Prefer one Citadel admin token scoped to the external agent identity. Rotate it
   separately from human tokens.
 - Do not ingest Google Chat messages back into Citadel in this phase.
+- Do not make Citadel an Agent Messenger actor. Scout owns Agent Messenger
+  communication and uses Citadel only as shared memory.
