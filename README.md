@@ -381,7 +381,20 @@ summer time. If Railway cron remains UTC-only, adjust the cron expression when
 Berlin switches between CET and CEST. The included `railway.toml` keeps
 the web service as the default mode and switches to the learning-agent command
 when `CITADEL_RUN_MODE=learning-agent`. The older `github-sync` run mode still
-works for compatibility.
+works for compatibility, but new cron services should use `learning-agent` so
+Railway service state matches the current boundary.
+
+Operational checks:
+
+- GitHub Actions are not required for the current Citadel production path unless
+  `.github/workflows` is added later; the active schedule is Railway cron.
+- Use `railway status --json` to inspect service deployments, cron schedules,
+  next run times, domains, and volume health.
+- Check recent web errors with `railway logs --service Citadel-Archive --environment production --http --status '>=400' --lines 50 --json`.
+- If Scout owns outbound gateways, keep Citadel Google Chat and Agent Messenger
+  credentials unset. Citadel should expose source-linked memory and preview
+  digests; Scout should post the digest to Google Chat, Agent Messenger, or
+  future gateways.
 
 ## Google Chat Organization Update Digest
 

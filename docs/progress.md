@@ -4,6 +4,29 @@ Last updated: 2026-06-08.
 
 ## 2026-06-08
 
+- Checked current Citadel automation and tightened the cron/gateway path:
+  - GitHub reports no Actions workflows and no Actions runs for
+    `masumi-network/Citadel-Archive`; active automation is Railway, not GitHub
+    Actions.
+  - Railway production has `Citadel-Archive`, `Citadel-GitHub-Sync`, and
+    `Postgres` deployed successfully.
+  - `Citadel-Archive` is running on
+    `citadel-archive-production.up.railway.app`; recent logs show startup and a
+    successful `/healthz` response, with no recent HTTP `>=400` logs returned.
+  - `Citadel-GitHub-Sync` is scheduled at `0 3 * * *` UTC with next run
+    `2026-06-09T03:00:00Z`. It still uses `CITADEL_RUN_MODE=github-sync`, which
+    is a compatibility alias for the learning-agent cron wrapper.
+  - The cron service has target URL, access key, and GitHub token configuration;
+    Citadel Google Chat credentials are unset, matching the Scout-owned gateway
+    boundary.
+  - A dry-run invocation through Railway production variables completed with
+    `ok=true`, scanned 42 repositories, found 7 changed repositories, 49 org
+    events, 24 commits, 6 open PRs, and 12 merged PRs, and left ingestion plus
+    gateway posting disabled.
+  - Refactored learning-agent gateway delivery to post configured gateways
+    concurrently and avoid recomputing gateway status in the status endpoint.
+  - Updated cron logging to summarize sanitized generic gateway delivery status
+    instead of only the legacy Google Chat compatibility field.
 - Created and pushed the separate Scout update-agent repository:
   - Repository: `https://github.com/masumi-network/Scout.git`.
   - Commit `5bc78d9` (`Scaffold Scout update agent`) is on Scout `main`.

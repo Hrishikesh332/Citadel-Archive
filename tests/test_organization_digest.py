@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import pytest
@@ -292,3 +293,53 @@ async def test_learning_agent_posts_to_configured_gateways(monkeypatch: Any) -> 
     assert result["notifications"]["gateways"]["internal_webhook"]["sent"] is True
     assert result["notifications"]["google_chat"]["reason"] == "google_chat_disabled"
     assert "Ship organization digest" in posted[0]
+
+
+@pytest.mark.asyncio
+async def test_learning_agent_posts_gateways_concurrently(monkeypatch: Any) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    started: list[str] = []
+    started_lock = threading.Lock()
+    all_started = threading.Event()
+
+    class FakeCitadel:
+        config = CitadelConfig(organization_digest_llm_enabled=False)
+
+    class FakeSyncer:
+        async def status(self) -> dict[str, Any]:
+            return {"ok": True}
+
+        async def run(self, *, force: bool = False, dry_run: bool = False) -> dict[str, Any]:
+            return _learning_result()["sources"]["github"]
+
+    class BlockingGateway:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def status(self) -> dict[str, Any]:
+            return {"enabled": True, "kind": "test"}
+
+        def post_digest(self, text: str, *, message_id: str | None = None) -> dict[str, Any]:
+            with started_lock:
+                started.append(self.name)
+                if len(started) == 2:
+                    all_started.set()
+            if not all_started.wait(timeout=1):
+                return {"ok": False, "sent": False, "status_category": "not_concurrent"}
+            return {"ok": True, "sent": True, "status_category": "success"}
+
+    agent = LearningAgent(
+        FakeCitadel(),
+        github_syncer=FakeSyncer(),
+        gateways={
+            "alpha": BlockingGateway("alpha"),
+            "bravo": BlockingGateway("bravo"),
+        },
+    )
+
+    result = await agent.run(post_to_chat=True, include_digest_preview=False)
+
+    assert sorted(started) == ["alpha", "bravo"]
+    assert result["notifications"]["gateways"]["alpha"]["sent"] is True
+    assert result["notifications"]["gateways"]["bravo"]["sent"] is True

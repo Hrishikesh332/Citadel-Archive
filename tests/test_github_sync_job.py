@@ -160,3 +160,33 @@ def test_scheduled_sync_fails_on_remote_http_error(monkeypatch: Any) -> None:
     monkeypatch.setattr(run_github_sync, "_post_json", post_json)
 
     assert run_github_sync.run() == 1
+
+
+def test_gateway_delivery_summary_prefers_generic_gateways() -> None:
+    result = {
+        "notifications": {
+            "google_chat": {"sent": False, "reason": "compatibility_value"},
+            "gateways": {
+                "internal_webhook": {"sent": True},
+                "google_chat": {"sent": False, "reason": "preview_only"},
+            },
+        }
+    }
+
+    assert (
+        run_github_sync._gateway_delivery_summary(result)
+        == "google_chat:preview_only,internal_webhook:sent"
+    )
+
+
+def test_gateway_delivery_summary_falls_back_to_google_chat() -> None:
+    result = {
+        "notifications": {
+            "google_chat": {"sent": False, "status_category": "delivery_error"}
+        }
+    }
+
+    assert (
+        run_github_sync._gateway_delivery_summary(result)
+        == "google_chat:delivery_error"
+    )

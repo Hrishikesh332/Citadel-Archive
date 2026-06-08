@@ -38,6 +38,7 @@ class LearningAgent:
 
     async def status(self) -> dict[str, Any]:
         github_status = await self.github_syncer.status()
+        notification_statuses = self._gateway_statuses()
         return {
             "ok": True,
             "agent": "citadel-learning-agent",
@@ -51,8 +52,8 @@ class LearningAgent:
                 "max_items": self.citadel.config.organization_digest_max_items,
             },
             "notifications": {
-                "gateways": self._gateway_statuses(),
-                "google_chat": self._gateway_status("google_chat"),
+                "gateways": notification_statuses,
+                "google_chat": notification_statuses.get("google_chat", {"enabled": False}),
             },
             "capabilities": [
                 "scan_github_repositories",
@@ -141,9 +142,6 @@ class LearningAgent:
         statuses.setdefault("google_chat", {"enabled": False})
         return statuses
 
-    def _gateway_status(self, name: str) -> dict[str, Any]:
-        return self._gateway_statuses().get(name, {"enabled": False})
-
     def _known_gateway_names(self) -> set[str]:
         return set(self.gateways) | {"google_chat"}
 
@@ -171,13 +169,21 @@ class LearningAgent:
         if not digest.get("meaningful") and not self.citadel.config.organization_digest_post_on_no_updates:
             return self._skip_gateway_results("no_meaningful_updates")
 
-        results: dict[str, dict[str, Any]] = {}
-        for name, gateway in sorted(self.gateways.items()):
-            results[name] = await self._post_gateway(
-                gateway,
-                digest_text,
-                message_id=str(checked_at or "latest"),
+        gateway_items = sorted(self.gateways.items())
+        posted_gateways = await asyncio.gather(
+            *(
+                self._post_gateway(
+                    gateway,
+                    digest_text,
+                    message_id=str(checked_at or "latest"),
+                )
+                for _, gateway in gateway_items
             )
+        )
+        results = {
+            name: posted
+            for (name, _), posted in zip(gateway_items, posted_gateways, strict=True)
+        }
 
         if "google_chat" not in results:
             results["google_chat"] = {

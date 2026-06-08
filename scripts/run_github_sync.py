@@ -128,7 +128,7 @@ def _log_result(result: dict[str, Any]) -> None:
         (
             "GitHub sync complete: repos=%s changed=%s events=%s commits=%s "
             "open_prs=%s merged_prs=%s security_blocked=%s findings=%s "
-            "ingested=%s improved=%s chat=%s"
+            "ingested=%s improved=%s gateways=%s"
         ),
         github.get("repos_scanned"),
         github.get("changed_count"),
@@ -140,9 +140,37 @@ def _log_result(result: dict[str, Any]) -> None:
         security_scan.get("finding_count"),
         result.get("ingested", github.get("ingested")),
         result.get("improved", github.get("improved")),
-        (result.get("notifications") or {}).get("google_chat", {}).get("reason")
-        or (result.get("notifications") or {}).get("google_chat", {}).get("status_category"),
+        _gateway_delivery_summary(result),
     )
+
+
+def _gateway_delivery_summary(result: dict[str, Any]) -> str | None:
+    notifications = result.get("notifications") or {}
+    gateways = notifications.get("gateways")
+    if isinstance(gateways, dict) and gateways:
+        parts = []
+        for name, status in sorted(gateways.items()):
+            if not isinstance(status, dict):
+                continue
+            if status.get("sent") is True:
+                outcome = "sent"
+            else:
+                outcome = status.get("reason") or status.get("status_category") or "not_sent"
+            parts.append(f"{name}:{outcome}")
+        if parts:
+            return ",".join(parts)
+
+    google_chat = notifications.get("google_chat")
+    if isinstance(google_chat, dict) and google_chat:
+        if google_chat.get("sent") is True:
+            return "google_chat:sent"
+        outcome = (
+            google_chat.get("reason")
+            or google_chat.get("status_category")
+            or "not_sent"
+        )
+        return f"google_chat:{outcome}"
+    return None
 
 
 def _public_summary(result: dict[str, Any]) -> dict[str, Any]:
