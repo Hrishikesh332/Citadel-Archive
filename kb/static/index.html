@@ -7,40 +7,15 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-frame dashboard-frame">
-      <header class="system-bar">
-        <div class="system-brand">
-          <div class="brand compact">
-            <div class="brand-mark" aria-hidden="true">CA</div>
-            <div>
-              <h1>Citadel Vault</h1>
-              <p>Organization Vault</p>
-            </div>
+    <div class="app-frame">
+      <header class="topbar">
+        <div class="brand compact">
+          <div class="brand-mark" aria-hidden="true">CA</div>
+          <div>
+            <h1>Citadel Vault</h1>
+            <p>Organization Vault</p>
           </div>
         </div>
-
-        <nav class="system-tabs" aria-label="Primary pages">
-          <button class="nav-link" data-page-target="overview" type="button">Graph</button>
-          <button class="nav-link" data-page-target="knowledge" type="button">Knowledge</button>
-          <button class="nav-link" data-page-target="search" type="button">Search</button>
-          <button class="nav-link" data-page-target="ingest" data-min-role="writer" type="button">
-            New note
-          </button>
-          <button class="nav-link" data-page-target="sources" type="button">Sources</button>
-          <button class="nav-link" data-page-target="agents" data-min-role="admin" type="button">
-            Agents
-          </button>
-          <button class="nav-link" data-page-target="audit" data-min-role="admin" type="button">
-            Audit
-          </button>
-          <button class="nav-link" data-page-target="access" data-min-role="admin" type="button">
-            Access
-          </button>
-          <button class="nav-link" data-page-target="settings" data-min-role="admin" type="button">
-            Settings
-          </button>
-        </nav>
-
         <div class="system-status">
           <span class="status-dot" aria-hidden="true"></span>
           <span id="connectionLabel">Connecting</span>
@@ -53,140 +28,100 @@
 
       <div class="shell">
         <aside class="sidebar" aria-label="Workspace navigation">
-          <nav class="vault-ribbon" aria-label="Quick commands">
-            <button class="ribbon-button" data-page-target="overview" aria-label="Open graph view" type="button">G</button>
-            <button class="ribbon-button" data-page-target="knowledge" aria-label="Open knowledge view" type="button">K</button>
-            <button class="ribbon-button" data-page-target="search" aria-label="Search vault" type="button">S</button>
-            <button
-              class="ribbon-button"
-              data-page-target="ingest"
-              data-min-role="writer"
-              aria-label="Create note"
-              type="button"
-            >
-              +
+          <nav class="side-nav" aria-label="Workspace pages">
+            <div class="nav-section-label">Vault</div>
+            <button class="nav-link" data-page-target="overview" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+              <span class="nav-label">Overview</span>
             </button>
-            <button class="ribbon-button" data-page-target="sources" aria-label="Open sources" type="button">R</button>
-            <button
-              class="ribbon-button"
-              data-page-target="agents"
-              data-min-role="admin"
-              aria-label="Open agent access"
-              type="button"
-            >
-              M
+            <button class="nav-link" data-page-target="knowledge" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              <span class="nav-label">Knowledge</span>
             </button>
-            <button
-              class="ribbon-button"
-              data-page-target="audit"
-              data-min-role="admin"
-              aria-label="Open audit trail"
-              type="button"
-            >
-              L
+            <button class="nav-link" data-page-target="search" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span class="nav-label">Search</span>
             </button>
-            <button
-              class="ribbon-button"
-              data-page-target="access"
-              data-min-role="admin"
-              aria-label="Open access settings"
-              type="button"
-            >
-              A
+            <button class="nav-link" data-page-target="ingest" data-min-role="writer" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <span class="nav-label">New note</span>
             </button>
-            <button
-              class="ribbon-button"
-              data-page-target="settings"
-              data-min-role="admin"
-              aria-label="Open settings"
-              type="button"
-            >
-              C
+            <button class="nav-link" data-page-target="feedback" data-min-role="writer" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span class="nav-label">Feedback</span>
+            </button>
+
+            <div class="nav-section-label">Sync</div>
+            <button class="nav-link" data-page-target="sources" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <span class="nav-label">Sources</span>
+            </button>
+            <button class="nav-link" data-page-target="conflicts" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span class="nav-label">Conflicts</span>
+              <span id="conflictNavBadge" class="nav-badge" hidden>0</span>
+            </button>
+            <button class="nav-link" data-page-target="events" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span class="nav-label">Activity</span>
+            </button>
+
+            <div class="nav-section-label" data-min-role="admin">Admin</div>
+            <button class="nav-link" data-page-target="agents" data-min-role="admin" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+              <span class="nav-label">Agents</span>
+            </button>
+            <button class="nav-link" data-page-target="audit" data-min-role="admin" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <span class="nav-label">Audit</span>
+            </button>
+            <button class="nav-link" data-page-target="access" data-min-role="admin" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m3 3L22 7l-3-3"/></svg>
+              <span class="nav-label">Access</span>
+            </button>
+            <button class="nav-link" data-page-target="settings" data-min-role="admin" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+              <span class="nav-label">Settings</span>
             </button>
           </nav>
 
-          <div class="vault-sidebar-content">
-            <section class="rail-card role-card">
-              <div class="panel-heading">
-                <div>
-                  <h2>Vault</h2>
-                  <p id="roleSummary" class="panel-kicker">Resolving access</p>
-                </div>
-                <span id="accessMode" class="status-chip">Locked</span>
+          <section class="side-status" aria-label="Vault status">
+            <div class="side-status-row">
+              <span class="side-status-label">Session</span>
+              <span id="accessMode" class="status-chip">Locked</span>
+            </div>
+            <p id="roleSummary" class="side-status-note">Resolving access</p>
+            <div class="side-status-row">
+              <span class="side-status-label">Shared Source</span>
+              <span id="githubSyncStatus" class="status-chip">Loading</span>
+            </div>
+            <dl class="source-meta">
+              <div>
+                <dt>Last check</dt>
+                <dd id="syncLastChecked">Waiting</dd>
               </div>
-            </section>
-
-            <nav class="system-map" aria-label="Workspace pages">
-              <div class="vault-section-label">Files</div>
-              <button class="nav-link" data-page-target="overview" type="button">00 Graph overview</button>
-              <button class="nav-link" data-page-target="knowledge" type="button">01 Knowledge</button>
-              <button class="nav-link" data-page-target="search" type="button">02 Vault search</button>
-              <button class="nav-link" data-page-target="ingest" data-min-role="writer" type="button">
-                03 New memory
-              </button>
-              <button class="nav-link" data-page-target="feedback" data-min-role="writer" type="button">
-                04 Feedback notes
-              </button>
-              <button class="nav-link" data-page-target="sources" type="button">05 Sources</button>
-              <button class="nav-link" data-page-target="events" type="button">06 Activity log</button>
-              <button class="nav-link" data-page-target="agents" data-min-role="admin" type="button">
-                07 Agents
-              </button>
-              <button class="nav-link" data-page-target="audit" data-min-role="admin" type="button">
-                08 Audit
-              </button>
-              <button class="nav-link" data-page-target="access" data-min-role="admin" type="button">
-                09 Access keys
-              </button>
-              <button class="nav-link" data-page-target="settings" data-min-role="admin" type="button">
-                10 Settings
-              </button>
-            </nav>
-
-            <section class="rail-card source-panel">
-              <div class="panel-heading">
-                <div>
-                  <h2>Shared Source</h2>
-                  <p class="panel-kicker">Repository and Obsidian vaults</p>
-                </div>
-                <span id="githubSyncStatus" class="status-chip">Loading</span>
+              <div>
+                <dt>Repos</dt>
+                <dd id="syncTrackedRepos">0</dd>
               </div>
-              <dl class="source-meta">
-                <div>
-                  <dt>Last check</dt>
-                  <dd id="syncLastChecked">Waiting</dd>
-                </div>
-                <div>
-                  <dt>Repos</dt>
-                  <dd id="syncTrackedRepos">0</dd>
-                </div>
-                <div>
-                  <dt>Vaults</dt>
-                  <dd id="obsidianVaultCount">0</dd>
-                </div>
-                <div>
-                  <dt>Notes</dt>
-                  <dd id="obsidianDocumentCount">0</dd>
-                </div>
-              </dl>
-            </section>
-
-            <section class="rail-card vault-links" aria-label="Pinned vault links">
-              <div class="vault-section-label">Pinned</div>
-              <a href="#overview">[[Architecture graph]]</a>
-              <a href="#knowledge">[[Repository daily updates]]</a>
-              <a href="#sources">[[Repository digest]]</a>
-              <a href="#access">[[Agent access]]</a>
-            </section>
-          </div>
+              <div>
+                <dt>Vaults</dt>
+                <dd id="obsidianVaultCount">0</dd>
+              </div>
+              <div>
+                <dt>Notes</dt>
+                <dd id="obsidianDocumentCount">0</dd>
+              </div>
+            </dl>
+          </section>
         </aside>
 
         <main class="workspace">
-          <section class="page page-active dashboard-page" data-page="overview" aria-labelledby="overviewTitle">
-            <div class="dashboard-hero">
+          <section class="page page-active" data-page="overview" aria-labelledby="overviewTitle">
+            <div class="page-heading hero-heading">
               <div>
                 <p class="eyebrow">Vault overview</p>
-                <h2 id="overviewTitle">Current vault state</h2>
+                <h2 id="overviewTitle" class="hero-title">Current vault state</h2>
                 <p class="dashboard-copy">
                   Monitor source freshness, retrieval health, and agent access before searching
                   or syncing the Organization Vault.
@@ -196,9 +131,6 @@
                 <span id="runtimeStatus" class="status-chip status-standby">Booting</span>
                 <button class="secondary-button" data-page-target="search" type="button">
                   Search vault
-                </button>
-                <button class="secondary-button" data-page-target="sources" type="button">
-                  Source sync
                 </button>
                 <button class="secondary-button" data-page-target="ingest" data-min-role="writer" type="button">
                   New note
@@ -225,7 +157,7 @@
             </section>
 
             <div class="dashboard-grid">
-              <section id="mesh" class="graph-panel window dashboard-graph" aria-labelledby="graphTitle">
+              <section id="mesh" class="graph-panel window" aria-labelledby="graphTitle">
                 <div class="window-titlebar graph-toolbar">
                   <div>
                     <p class="eyebrow">Linked memory</p>
@@ -233,9 +165,16 @@
                     <p id="graphMeta">Waiting for snapshot</p>
                   </div>
                   <div class="toolbar-actions">
-                    <span class="status-chip status-enabled">Live</span>
-                    <button id="fitButton" class="secondary-button" type="button">Fit</button>
-                    <button id="pauseButton" class="secondary-button" type="button">Pause</button>
+                    <div class="segmented-control graph-mode" role="group" aria-label="Graph data source">
+                      <button class="segment-button active" type="button" data-graph-mode="live" aria-pressed="true">
+                        Activity
+                      </button>
+                      <button class="segment-button" type="button" data-graph-mode="knowledge" aria-pressed="false">
+                        Knowledge graph
+                      </button>
+                    </div>
+                    <button id="fitButton" class="secondary-button compact-button" type="button">Fit</button>
+                    <button id="pauseButton" class="secondary-button compact-button" type="button">Pause</button>
                   </div>
                 </div>
                 <div id="meshAlert" class="inline-alert" hidden>
@@ -259,6 +198,10 @@
                     <h3>No graph notes yet</h3>
                     <p>Ingest a memory or run source sync to create the first linked nodes.</p>
                   </div>
+                  <div id="realGraphEmpty" class="canvas-empty" hidden>
+                    <h3>No knowledge graph yet</h3>
+                    <p>Cognee has not produced graph data yet. Ingest notes or run source sync, then check back.</p>
+                  </div>
                 </div>
                 <div id="selectedNode" class="selection" aria-live="polite">
                   Select a note or node to inspect its links.
@@ -266,7 +209,7 @@
               </section>
 
               <aside class="dashboard-side" aria-label="Dashboard operations">
-                <section class="window action-panel dashboard-card">
+                <section class="window action-panel">
                   <div class="window-titlebar panel-heading">
                     <div>
                       <h2>Inbox</h2>
@@ -288,7 +231,7 @@
                   </button>
                 </section>
 
-                <section class="window action-panel dashboard-card">
+                <section class="window action-panel">
                   <div class="window-titlebar panel-heading">
                     <div>
                       <h2>Shared Access</h2>
@@ -752,6 +695,36 @@
             </div>
           </section>
 
+          <section class="page" data-page="conflicts" aria-labelledby="conflictsTitle" hidden>
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">Review</p>
+                <h2 id="conflictsTitle">Knowledge Conflicts</h2>
+              </div>
+              <span id="conflictsStatus" class="status-chip">Loading</span>
+            </div>
+            <div class="conflict-toolbar" aria-label="Conflict filters">
+              <div class="segmented-control" id="conflictFilterGroup" role="group" aria-label="Conflict status filter">
+                <button class="segment-button active" type="button" data-conflict-filter="open" aria-pressed="true">
+                  Open
+                </button>
+                <button class="segment-button" type="button" data-conflict-filter="resolved" aria-pressed="false">
+                  Resolved
+                </button>
+                <button class="segment-button" type="button" data-conflict-filter="all" aria-pressed="false">
+                  All
+                </button>
+              </div>
+              <p class="panel-kicker">
+                Disagreements between sources stay visible until a teammate resolves them.
+              </p>
+            </div>
+            <div id="conflictsList" class="conflict-list" aria-live="polite">
+              <div class="skeleton index-skeleton"></div>
+              <div class="skeleton index-skeleton"></div>
+            </div>
+          </section>
+
           <section
             class="page"
             data-page="access"
@@ -1114,7 +1087,7 @@ args = [
               </div>
               <span id="eventCount" class="status-chip">0</span>
             </div>
-            <section class="window">
+            <section class="window event-window">
               <ol id="eventList" class="event-list" aria-live="polite"></ol>
             </section>
           </section>
@@ -1136,6 +1109,8 @@ args = [
         <span>Vector: pgvector</span>
       </footer>
     </div>
+
+    <div id="toastStack" class="toast-stack" role="status" aria-live="polite"></div>
 
     <script src="/static/app.js" type="module"></script>
   </body>

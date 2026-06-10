@@ -13,6 +13,11 @@ const state = {
   accessSnapshot: null,
   settingsSnapshot: null,
   auditFilter: "all",
+  graphMode: "live",
+  realGraph: null,
+  realGraphLoading: false,
+  conflicts: [],
+  conflictFilter: "open",
 };
 
 const canvas = document.getElementById("graphCanvas");
@@ -83,6 +88,13 @@ const auditAccessSubtitle = document.getElementById("auditAccessSubtitle");
 const settingsStatus = document.getElementById("settingsStatus");
 const settingsHealthGrid = document.getElementById("settingsHealthGrid");
 const settingsMirrorList = document.getElementById("settingsMirrorList");
+const conflictsStatus = document.getElementById("conflictsStatus");
+const conflictsList = document.getElementById("conflictsList");
+const conflictNavBadge = document.getElementById("conflictNavBadge");
+const conflictFilterButtons = Array.from(document.querySelectorAll("[data-conflict-filter]"));
+const graphModeButtons = Array.from(document.querySelectorAll("[data-graph-mode]"));
+const realGraphEmpty = document.getElementById("realGraphEmpty");
+const toastStack = document.getElementById("toastStack");
 const pageButtons = Array.from(document.querySelectorAll("[data-page-target]"));
 const pages = Array.from(document.querySelectorAll("[data-page]"));
 const roleOrder = { reader: 1, writer: 2, admin: 3 };
@@ -122,15 +134,28 @@ const graph = {
 
 const colors = {
   dataset: "#a882ff",
-  document: "#e0de71",
-  tag: "#b9bbc8",
-  index: "#53dfdd",
-  query: "#e0de71",
-  feedback: "#fb464c",
-  upgrade: "#44cf6e",
-  source: "#53dfdd",
-  repository: "#a882ff",
+  document: "#cfcfcf",
+  tag: "#8f8f8f",
+  index: "#7dd4c0",
+  query: "#d6cf94",
+  feedback: "#e8615f",
+  upgrade: "#6ecb8d",
+  source: "#7dd4c0",
+  repository: "#8f6ee8",
 };
+
+const realGraphPalette = ["#a882ff", "#c4b1ff", "#8f6ee8", "#7dd4c0", "#cfcfcf", "#9a9a9a"];
+
+function typeColor(type) {
+  return realGraphPalette[Math.floor(hashUnit(String(type || "node")) * realGraphPalette.length) % realGraphPalette.length];
+}
+
+function activeGraphData() {
+  if (state.graphMode === "knowledge") {
+    return state.realGraph || { nodes: new Map(), edges: [] };
+  }
+  return { nodes: state.nodes, edges: state.edges };
+}
 
 function api(path, options = {}) {
   return fetch(path, {
@@ -200,10 +225,15 @@ function applyAccessControls() {
     }
     if (element.matches("button, input, textarea, select")) {
       element.disabled = !allowed;
+      return;
+    }
+    if (!element.matches("[data-page]")) {
+      element.hidden = !allowed;
     }
   });
 
   renderDashboardMcpSession();
+  renderConflicts();
 }
 
 function renderDashboardMcpSession() {
@@ -270,6 +300,9 @@ function setPage(name) {
   if (resolvedName === "settings") {
     loadSettings();
   }
+  if (resolvedName === "conflicts") {
+    loadConflicts();
+  }
 }
 
 function initializeNavigation() {
@@ -318,19 +351,23 @@ function mergeGraph(snapshot) {
   }
 
   state.edges = snapshot.edges;
-  buildGraphScene();
-  if (!graph.viewInitialized) {
-    resetGraphView();
-    graph.viewInitialized = true;
+  if (state.graphMode === "live") {
+    buildGraphScene();
+    if (!graph.viewInitialized) {
+      resetGraphView();
+      graph.viewInitialized = true;
+    }
   }
   renderSnapshot(snapshot);
-  selectNode(state.nodes.get(state.selectedId) || null);
+  if (state.graphMode === "live") {
+    selectNode(state.nodes.get(state.selectedId) || null);
+  }
 }
 
 function renderSnapshot(snapshot) {
   meshAlert.hidden = true;
-  canvasEmpty.hidden = snapshot.nodes.length > 4;
-  graphMeta.textContent = `${snapshot.default_dataset} - rev ${snapshot.revision} - ${formatDate(snapshot.generated_at)}`;
+  canvasEmpty.hidden = state.graphMode !== "live" || snapshot.nodes.length > 4;
+  updateGraphMeta();
   document.getElementById("statNodes").textContent = snapshot.stats.nodes;
   document.getElementById("statEdges").textContent = snapshot.stats.edges;
   document.getElementById("statDocuments").textContent = snapshot.stats.documents;
@@ -808,9 +845,9 @@ function createSceneBase() {
   base.add(grid);
 
   const rings = [
-    { radius: 185, opacity: 0.24, color: 0xa882ff },
-    { radius: 300, opacity: 0.14, color: 0x53dfdd },
-    { radius: 425, opacity: 0.1, color: 0xe0de71 },
+    { radius: 185, opacity: 0.2, color: 0xa882ff },
+    { radius: 300, opacity: 0.12, color: 0x4a4a4a },
+    { radius: 425, opacity: 0.08, color: 0x4a4a4a },
   ];
   rings.forEach((ring) => {
     const geometry = new THREE.TorusGeometry(ring.radius, 0.9, 6, 128);
@@ -894,10 +931,11 @@ function buildGraphScene() {
   graph.nodeObjects.clear();
   graph.nodeLabelSprites.clear();
 
+  const graphData = activeGraphData();
   const edgePositions = [];
-  for (const edge of state.edges) {
-    const source = state.nodes.get(edge.source);
-    const target = state.nodes.get(edge.target);
+  for (const edge of graphData.edges) {
+    const source = graphData.nodes.get(edge.source);
+    const target = graphData.nodes.get(edge.target);
     if (!source || !target) continue;
     edgePositions.push(source.x, source.y, source.z, target.x, target.y, target.z);
   }
@@ -906,7 +944,7 @@ function buildGraphScene() {
     const edgeGeometry = new THREE.BufferGeometry();
     edgeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(edgePositions, 3));
     const edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0x9aa5b5,
+      color: state.graphMode === "knowledge" ? 0x7a6aa8 : 0x6b6b78,
       transparent: true,
       opacity: 0.34,
       depthWrite: false,
@@ -914,10 +952,14 @@ function buildGraphScene() {
     graph.edgeGroup.add(new THREE.LineSegments(edgeGeometry, edgeMaterial));
   }
 
-  const nodes = Array.from(state.nodes.values()).sort(compareNodes);
+  const nodes = Array.from(graphData.nodes.values()).sort(compareNodes);
   nodes.forEach((node) => {
     const radius = nodeRadius(node);
-    const color = new THREE.Color(colors[node.type] || "#b5bdc9");
+    const color = new THREE.Color(
+      state.graphMode === "knowledge"
+        ? typeColor(node.type)
+        : colors[node.type] || "#b5bdc9",
+    );
     const { object, mesh } = createNodeObject(node, radius, color);
     object.position.set(node.x, node.y, node.z);
     graph.nodeObjects.set(node.id, object);
@@ -1041,6 +1083,12 @@ function graphLayoutScale() {
 }
 
 function shouldShowNodeLabel(node) {
+  if (state.graphMode === "knowledge") {
+    if (graph.width < 560) return false;
+    const total = state.realGraph?.nodes?.size || 0;
+    if (total <= 48) return true;
+    return Number(node.metadata?.links || 0) >= 2;
+  }
   return graph.width >= 560 || node.type === "dataset";
 }
 
@@ -1070,7 +1118,8 @@ function createLabelSprite(node, radius) {
 
   context.beginPath();
   context.arc(16, height / 2, 3.5, 0, Math.PI * 2);
-  context.fillStyle = colors[node.type] || "#b5bdc9";
+  context.fillStyle =
+    state.graphMode === "knowledge" ? typeColor(node.type) : colors[node.type] || "#b5bdc9";
   context.fill();
   context.fillStyle = "#eff0f7";
   context.fillText(label, 27, height / 2, width - 36);
@@ -1181,7 +1230,7 @@ function fitGraphDistance() {
 }
 
 function defaultGraphDistance() {
-  const nodeCount = Math.max(state.nodes.size, 5);
+  const nodeCount = Math.max(activeGraphData().nodes.size, 5);
   const density = clamp(Math.sqrt(nodeCount / 16), 1, 1.42);
   const viewportScale = graph.width < 560 ? 1.08 : graph.width < 900 ? 1.12 : 1;
   return clamp(
@@ -1230,7 +1279,7 @@ function nearestNode(event) {
   graph.raycaster.setFromCamera(graph.pointer, graph.camera);
   const intersections = graph.raycaster.intersectObjects(Array.from(graph.nodeMeshes.values()), false);
   const hit = intersections[0]?.object;
-  return hit ? state.nodes.get(hit.userData.nodeId) || null : null;
+  return hit ? activeGraphData().nodes.get(hit.userData.nodeId) || null : null;
 }
 
 function clamp(value, min, max) {
@@ -1270,6 +1319,294 @@ async function loadMesh(showConnection = true) {
     meshAlert.hidden = false;
     meshAlertText.textContent = error.message || "Try refreshing the vault.";
     console.error(error);
+  }
+}
+
+function showToast(message, kind = "info") {
+  if (!toastStack) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${kind}`;
+  toast.textContent = message;
+  toastStack.append(toast);
+  window.setTimeout(() => {
+    toast.classList.add("toast-leaving");
+    window.setTimeout(() => toast.remove(), 200);
+  }, 4200);
+}
+
+function updateGraphMeta(message) {
+  if (message) {
+    graphMeta.textContent = message;
+    return;
+  }
+  if (state.graphMode === "knowledge") {
+    const payload = state.realGraph?.payload;
+    if (!payload) {
+      graphMeta.textContent = "Loading knowledge graph";
+      return;
+    }
+    const shown = state.realGraph.nodes.size;
+    const truncated = payload.truncated ? ` of ${payload.total_nodes}` : "";
+    graphMeta.textContent = `Cognee graph - ${shown}${truncated} nodes - ${state.realGraph.edges.length} edges`;
+    return;
+  }
+  if (state.snapshot) {
+    graphMeta.textContent = `${state.snapshot.default_dataset} - rev ${state.snapshot.revision} - ${formatDate(state.snapshot.generated_at)}`;
+  } else {
+    graphMeta.textContent = "Waiting for snapshot";
+  }
+}
+
+function updateRealGraphEmpty() {
+  if (!realGraphEmpty) return;
+  const payload = state.realGraph?.payload;
+  const show = state.graphMode === "knowledge" && Boolean(payload) && !state.realGraph.nodes.size;
+  realGraphEmpty.hidden = !show;
+  if (show) {
+    const text = realGraphEmpty.querySelector("p");
+    if (text) {
+      text.textContent = payload.fallback
+        ? "Cognee has not produced graph data yet. Ingest notes or run source sync, then check back."
+        : "The knowledge graph is empty. Ingest notes or run source sync, then check back.";
+    }
+  }
+}
+
+function shapeRealGraph(payload) {
+  const degree = new Map();
+  const rawEdges = Array.isArray(payload.edges) ? payload.edges : [];
+  rawEdges.forEach((edge) => {
+    degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
+    degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
+  });
+
+  const nodes = new Map();
+  const list = Array.isArray(payload.nodes) ? payload.nodes : [];
+  const count = Math.max(list.length, 1);
+  const radius = clamp(170 + Math.sqrt(count) * 26, 210, 470);
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  list.forEach((node, index) => {
+    const t = count === 1 ? 0.5 : index / (count - 1);
+    const y = 1 - t * 2;
+    const ring = Math.sqrt(Math.max(0, 1 - y * y));
+    const angle = golden * index;
+    const links = degree.get(node.id) || 0;
+    nodes.set(node.id, {
+      id: node.id,
+      label: node.label || node.id,
+      type: node.type || "node",
+      status: "linked",
+      size: clamp(26 + links * 5, 24, 58),
+      metadata: { type: node.type || "node", links },
+      x: Math.cos(angle) * ring * radius,
+      y: y * radius * 0.72,
+      z: Math.sin(angle) * ring * radius,
+    });
+  });
+
+  return {
+    nodes,
+    edges: rawEdges.filter((edge) => nodes.has(edge.source) && nodes.has(edge.target)),
+    payload,
+  };
+}
+
+async function loadKnowledgeGraph(force = false) {
+  if (state.realGraphLoading) return;
+  if (state.realGraph && !force) {
+    buildGraphScene();
+    resetGraphView();
+    updateGraphMeta();
+    updateRealGraphEmpty();
+    return;
+  }
+  state.realGraphLoading = true;
+  updateGraphMeta("Loading knowledge graph");
+  try {
+    const payload = await api("/api/mesh/graph");
+    state.realGraph = shapeRealGraph(payload);
+    if (state.graphMode === "knowledge") {
+      buildGraphScene();
+      resetGraphView();
+      updateGraphMeta();
+      updateRealGraphEmpty();
+    }
+  } catch (error) {
+    showToast(`Could not load the knowledge graph: ${error.message}`, "error");
+    if (state.graphMode === "knowledge") {
+      updateGraphMeta("Knowledge graph unavailable");
+    }
+  } finally {
+    state.realGraphLoading = false;
+  }
+}
+
+function setGraphMode(mode) {
+  if (state.graphMode === mode) return;
+  state.graphMode = mode;
+  graphModeButtons.forEach((button) => {
+    const active = button.dataset.graphMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  state.selectedId = null;
+  selectedNode.textContent = "Select a note or node to inspect its links.";
+  if (mode === "knowledge") {
+    canvasEmpty.hidden = true;
+    buildGraphScene();
+    updateGraphMeta();
+    updateRealGraphEmpty();
+    loadKnowledgeGraph();
+    return;
+  }
+  realGraphEmpty.hidden = true;
+  buildGraphScene();
+  resetGraphView();
+  updateGraphMeta();
+  canvasEmpty.hidden = !state.snapshot || state.snapshot.nodes.length > 4;
+}
+
+function conflictSideMarkup(label, side = {}) {
+  return `
+    <div class="conflict-side">
+      <div class="conflict-side-head">
+        <span class="conflict-side-label">${escapeHtml(label)}</span>
+        <time class="event-time">${escapeHtml(side.timestamp ? formatDate(side.timestamp) : "no timestamp")}</time>
+      </div>
+      <p class="conflict-source">${escapeHtml(side.source || "unknown source")}</p>
+      <pre class="conflict-excerpt">${escapeHtml(side.excerpt || "(empty excerpt)")}</pre>
+    </div>
+  `;
+}
+
+function updateConflictBadge(openCount) {
+  if (!conflictNavBadge) return;
+  conflictNavBadge.textContent = String(openCount);
+  conflictNavBadge.hidden = !openCount;
+  if (knowledgeConflictCount) knowledgeConflictCount.textContent = String(openCount);
+}
+
+function renderConflicts() {
+  if (!conflictsList) return;
+  conflictFilterButtons.forEach((button) => {
+    const active = button.dataset.conflictFilter === state.conflictFilter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  conflictsList.innerHTML = "";
+  if (!state.conflicts.length) {
+    const labels = {
+      open: ["No open conflicts", "Disagreements between sources will appear here for review."],
+      resolved: ["No resolved conflicts yet", "Resolved conflicts keep their resolution note for the audit trail."],
+      all: ["No conflicts recorded", "Disagreements between sources will appear here for review."],
+    };
+    const [title, body] = labels[state.conflictFilter] || labels.all;
+    conflictsList.append(emptyState(title, body));
+    return;
+  }
+  const canResolve = canUse("writer");
+  state.conflicts.forEach((conflict) => {
+    const open = conflict.status === "open";
+    const card = document.createElement("article");
+    card.className = `conflict-card${open ? " conflict-open" : ""}`;
+    card.innerHTML = `
+      <div class="conflict-head">
+        <div class="conflict-head-meta">
+          <span class="conflict-kind">${escapeHtml(conflict.kind || "conflict")}</span>
+          <span class="conflict-id">${escapeHtml(conflict.id || "")}</span>
+        </div>
+        <div class="conflict-head-meta">
+          <time class="event-time">${escapeHtml(formatDate(conflict.detected_at))}</time>
+          <span class="status-chip ${open ? "status-standby" : "status-enabled"}">${escapeHtml(conflict.status || "open")}</span>
+        </div>
+      </div>
+      <p class="conflict-summary">${escapeHtml(conflict.summary || "Conflicting knowledge detected.")}</p>
+      <div class="conflict-sides">
+        ${conflictSideMarkup("Side A", conflict.side_a)}
+        ${conflictSideMarkup("Side B", conflict.side_b)}
+      </div>
+    `;
+    if (open) {
+      const form = document.createElement("form");
+      form.className = "conflict-resolve";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.name = "resolutionNote";
+      input.placeholder = "Resolution note (which side wins, and why)";
+      input.autocomplete = "off";
+      input.required = true;
+      input.maxLength = 400;
+      input.disabled = !canResolve;
+      input.setAttribute("aria-label", "Resolution note");
+      const button = document.createElement("button");
+      button.type = "submit";
+      button.className = "primary-button";
+      button.textContent = "Resolve";
+      button.disabled = !canResolve;
+      if (!canResolve) {
+        button.title = "Writer access required";
+      }
+      form.append(input, button);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = input.value.trim();
+        if (!note) {
+          input.focus();
+          return;
+        }
+        setBusy(button, true, { idle: "Resolve", loading: "Resolving" });
+        try {
+          await api(`/api/conflicts/${encodeURIComponent(conflict.id)}/resolve`, {
+            method: "POST",
+            body: JSON.stringify({ resolution_note: note }),
+          });
+          showToast("Conflict resolved.", "success");
+          await loadConflicts();
+        } catch (error) {
+          showToast(`Could not resolve conflict: ${error.message}`, "error");
+          setBusy(button, false, { idle: "Resolve", loading: "Resolving" });
+        }
+      });
+      card.append(form);
+    } else {
+      const resolution = document.createElement("div");
+      resolution.className = "conflict-resolution";
+      resolution.innerHTML = `
+        <strong>Resolved</strong>
+        <span>${escapeHtml(conflict.resolution_note || "No resolution note.")}</span>
+        <span>${escapeHtml(conflict.resolved_by || "unknown")} - ${escapeHtml(formatDate(conflict.resolved_at))}</span>
+      `;
+      card.append(resolution);
+    }
+    conflictsList.append(card);
+  });
+}
+
+async function loadConflicts() {
+  if (!conflictsList) return;
+  if (conflictsStatus) {
+    conflictsStatus.textContent = "Loading";
+    conflictsStatus.className = "status-chip status-standby";
+  }
+  try {
+    const query = state.conflictFilter === "all" ? "" : `?status=${state.conflictFilter}`;
+    const payload = await api(`/api/conflicts${query}`);
+    state.conflicts = payload.conflicts || [];
+    const openCount = Number(payload.open_count || 0);
+    updateConflictBadge(openCount);
+    if (conflictsStatus) {
+      conflictsStatus.textContent = openCount ? `${openCount} open` : "Clear";
+      conflictsStatus.className = `status-chip ${openCount ? "status-standby" : "status-enabled"}`;
+    }
+    renderConflicts();
+  } catch (error) {
+    if (conflictsStatus) {
+      conflictsStatus.textContent = "Error";
+      conflictsStatus.className = "status-chip status-error";
+    }
+    state.conflicts = [];
+    conflictsList.innerHTML = "";
+    conflictsList.append(emptyState("Could not load conflicts", error.message));
   }
 }
 
@@ -1881,6 +2218,10 @@ document.getElementById("refreshButton").addEventListener("click", () => {
   loadMesh();
   loadGithubSync();
   loadObsidianSources();
+  loadConflicts();
+  if (state.graphMode === "knowledge") {
+    loadKnowledgeGraph(true);
+  }
   if (canUse("admin")) {
     loadAccess();
     loadSettings();
@@ -1901,6 +2242,17 @@ auditFilterButtons.forEach((button) => {
     state.auditFilter = button.dataset.auditFilter || "all";
     renderAuditAccessEvents(state.accessSnapshot?.audit_events || []);
   });
+});
+
+conflictFilterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    state.conflictFilter = button.dataset.conflictFilter || "open";
+    loadConflicts();
+  });
+});
+
+graphModeButtons.forEach((button) => {
+  button.addEventListener("click", () => setGraphMode(button.dataset.graphMode || "live"));
 });
 
 canvas.addEventListener("pointerdown", (event) => {
@@ -2357,6 +2709,10 @@ function renderSearchResults(results) {
 
 window.addEventListener("resize", () => {
   resizeCanvas();
+  if (state.graphMode === "knowledge") {
+    buildGraphScene();
+    return;
+  }
   if (state.snapshot) mergeGraph(state.snapshot);
 });
 
@@ -2372,6 +2728,7 @@ loadSession().then(() => {
   loadMesh();
   loadGithubSync();
   loadObsidianSources();
+  loadConflicts();
   if (canUse("admin")) {
     loadAccess();
     loadSettings();
