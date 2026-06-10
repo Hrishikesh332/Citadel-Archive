@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from hashlib import sha256
+import logging
 from typing import Any
 
 from kb.cognee_client import CogneeGateway, CogneePublicClient
@@ -10,6 +11,8 @@ from kb.filters import PreIngestFilter
 from kb.models import FeedbackRequest, FeedbackResult, IngestResult
 from kb.source_search import search_github_sync_state
 from kb.tags import merge_tags
+
+logger = logging.getLogger(__name__)
 
 
 class Citadel:
@@ -48,10 +51,16 @@ class Citadel:
         merged_tags = merge_tags(self.config.default_tags, tags)
         decision = self.filter.check(data)
         if not decision.accepted:
+            logger.info(
+                "Ingest rejected for dataset %s: %s", target_dataset, decision.reason
+            )
             return IngestResult(False, decision.reason, target_dataset, merged_tags)
 
         content_hash = sha256(data.encode("utf-8")).hexdigest()
         if content_hash in self._seen_hashes:
+            logger.info(
+                "Ingest rejected for dataset %s: duplicate_in_process", target_dataset
+            )
             return IngestResult(False, "duplicate_in_process", target_dataset, merged_tags)
         self._seen_hashes.add(content_hash)
 

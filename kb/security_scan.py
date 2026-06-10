@@ -75,6 +75,23 @@ SECRET_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ),
 )
 
+# Redaction-only patterns either match the bare secret (no groups) or capture the
+# non-secret prefix as group(1); the secret value itself is never kept.
+REDACTION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"ctdl_[A-Za-z0-9_-]+"),
+    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)(token[\"'\s:=]+)[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)(api[_-]?key[\"'\s:=]+)[A-Za-z0-9._~+/=-]+"),
+    *(
+        pattern
+        for category, _, pattern in SECRET_PATTERNS
+        if category != "secret_assignment"
+    ),
+    re.compile(
+        r"(?i)(\b(?:api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*['\"]?)[^\s'\"]{4,}"
+    ),
+)
+
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"`]+", re.IGNORECASE)
 RISKY_SCHEME_PATTERN = re.compile(r"(?i)\b(?:javascript|data|vbscript):|file://")
 BIDI_CONTROL_CODES = {
@@ -88,6 +105,22 @@ BIDI_CONTROL_CODES = {
     "\u2068",
     "\u2069",
 }
+
+
+def redact_secrets(value: str, *known_secrets: str | None) -> str:
+    """Mask secret-looking material so the text is safe for logs and errors."""
+    redacted = value
+    for secret in known_secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    for pattern in REDACTION_PATTERNS:
+        redacted = pattern.sub(
+            lambda match: f"{match.group(1)}[REDACTED]"
+            if match.groups()
+            else "[REDACTED]",
+            redacted,
+        )
+    return redacted
 
 
 @dataclass(frozen=True)

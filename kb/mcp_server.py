@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -15,6 +16,9 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
+from kb.security_scan import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 MAX_SEARCH_TOP_K = 25
 MAX_AUDIT_LIMIT = 100
@@ -23,12 +27,6 @@ LOCAL_MCP_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 TRUTHY = frozenset({"1", "true", "yes", "on"})
 AUDIT_VIEWS = frozenset({"all", "mcp", "access", "failures"})
 PUBLIC_HOST_RE = re.compile(r"^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$")
-SECRET_PATTERNS = (
-    re.compile(r"ctdl_[A-Za-z0-9_-]+"),
-    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"),
-    re.compile(r"(?i)(token[\"'\s:=]+)[A-Za-z0-9._~+/=-]+"),
-    re.compile(r"(?i)(api[_-]?key[\"'\s:=]+)[A-Za-z0-9._~+/=-]+"),
-)
 
 
 class CitadelMcpError(RuntimeError):
@@ -192,21 +190,6 @@ TOOL_POLICIES: dict[str, ToolPolicy] = {
 
 def _env_enabled(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in TRUTHY
-
-
-def _redact_secrets(value: str, *known_secrets: str | None) -> str:
-    redacted = value
-    for secret in known_secrets:
-        if secret:
-            redacted = redacted.replace(secret, "[REDACTED]")
-    for pattern in SECRET_PATTERNS:
-        redacted = pattern.sub(
-            lambda match: f"{match.group(1)}[REDACTED]"
-            if match.groups()
-            else "[REDACTED]",
-            redacted,
-        )
-    return redacted
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -428,13 +411,23 @@ class CitadelHttpClient:
             with urlopen(request, timeout=self.timeout) as response:
                 data = response.read().decode("utf-8")
         except HTTPError as exc:
-            detail = _redact_secrets(
+            detail = redact_secrets(
                 exc.read().decode("utf-8", errors="replace")[:500],
                 self.access_token,
             )
+            logger.warning(
+                "Citadel API call %s %s returned HTTP %s", method, path, exc.code
+            )
             raise CitadelMcpError(f"Citadel returned HTTP {exc.code}: {detail}") from exc
         except URLError as exc:
-            reason = _redact_secrets(str(exc.reason), self.access_token)
+            reason = redact_secrets(str(exc.reason), self.access_token)
+            logger.error(
+                "Citadel API call %s %s failed: %s: %s",
+                method,
+                path,
+                exc.__class__.__name__,
+                reason,
+            )
             raise CitadelMcpError(f"Could not reach Citadel at {self.base_url}: {reason}") from exc
         try:
             parsed = json.loads(data or "{}")
@@ -772,6 +765,9 @@ def create_mcp_server(
 
 
 def main() -> None:
+    from kb.logging_utils import configure_logging
+
+    configure_logging()
     transport = os.getenv("CITADEL_MCP_TRANSPORT", "stdio")
     # Stdio transport has no per-request HTTP context, so authenticate with an
     # env-configured client. The hosted transport (mounted in kb.server) instead

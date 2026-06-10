@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 import json
+import logging
 from typing import Any, Mapping
 
 from kb.google_chat import GoogleChatDelivery
@@ -11,6 +12,8 @@ from kb.github_sync import GitHubOrgSyncer
 from kb.notification_gateways import NotificationGateway, configured_gateways, gateway_statuses
 from kb.organization_digest import build_organization_digest
 from kb.service import Citadel
+
+logger = logging.getLogger(__name__)
 
 
 class LearningAgent:
@@ -77,6 +80,12 @@ class LearningAgent:
         post_to_chat: bool = False,
         include_digest_preview: bool = True,
     ) -> dict[str, Any]:
+        logger.info(
+            "Learning agent run starting (force=%s, dry_run=%s, post_to_chat=%s)",
+            force,
+            dry_run,
+            post_to_chat,
+        )
         github_result = await self.github_syncer.run(force=force, dry_run=dry_run)
         vault_context = await self._recent_vault_context()
         result = {
@@ -109,6 +118,12 @@ class LearningAgent:
             "gateways": gateway_results,
             "google_chat": gateway_results.get("google_chat", {"enabled": False}),
         }
+        logger.info(
+            "Learning agent run finished: ingested=%s, improved=%s, digest_meaningful=%s",
+            result.get("ingested"),
+            result.get("improved"),
+            digest.get("meaningful"),
+        )
         return result
 
     async def _recent_vault_context(self) -> dict[str, Any]:
@@ -123,6 +138,10 @@ class LearningAgent:
         try:
             results = await self.citadel.search(query, dataset=dataset, top_k=5)
         except Exception as exc:
+            logger.warning(
+                "Vault context search failed with %s; continuing without recent context",
+                exc.__class__.__name__,
+            )
             return {
                 "ok": False,
                 "dataset": dataset,
@@ -207,6 +226,9 @@ class LearningAgent:
                 message_id=message_id,
             )
         except Exception as exc:
+            logger.error(
+                "Gateway digest delivery failed with %s", exc.__class__.__name__
+            )
             return {
                 "enabled": True,
                 "ok": False,
@@ -330,6 +352,9 @@ def _safe_context_metadata(value: Any) -> dict[str, Any]:
 
 
 def main() -> None:
+    from kb.logging_utils import configure_logging
+
+    configure_logging()
     parser = build_parser()
     args = parser.parse_args()
     asyncio.run(_run_agent(args))

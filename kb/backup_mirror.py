@@ -4,6 +4,7 @@ import base64
 from datetime import UTC, datetime
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -11,6 +12,10 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from kb.config import CitadelConfig
+from kb.retry import run_with_retries
+from kb.security_scan import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 MIRROR_VERSION = 1
 GITHUB_API = "https://api.github.com"
@@ -146,15 +151,27 @@ class GitHubMirrorPublisher:
             },
             method=method,
         )
-        try:
+
+        def send() -> Any:
             with urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8") or "{}")
+
+        try:
+            return run_with_retries(send, operation=f"backup_mirror.{method.lower()} {path}")
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:300]
+            detail = redact_secrets(exc.read().decode("utf-8", errors="replace")[:300], self.token)
+            if exc.code != 404:
+                logger.error("Backup mirror GitHub request %s failed: HTTPError %s", path, exc.code)
             raise BackupMirrorPublishError(
                 f"GitHub API returned {exc.code}: {detail}"
             ) from exc
         except URLError as exc:
+            logger.error(
+                "Backup mirror GitHub request %s failed: %s: %s",
+                path,
+                exc.__class__.__name__,
+                redact_secrets(str(exc.reason), self.token),
+            )
             raise BackupMirrorPublishError(f"Could not reach GitHub API: {exc.reason}") from exc
 
     def _parse_repo(self, repo: str) -> tuple[str, str]:
@@ -242,6 +259,7 @@ class BackupMirror:
         self._write_json(self.latest_manifest_path, manifest)
         result["snapshot_manifest_path"] = str(snapshot_path)
         result["written"] = True
+        logger.info("Backup mirror manifest %s written to %s", manifest["snapshot_id"], snapshot_path)
         publisher = self._publisher()
         if self.config.backup_mirror_push_enabled and publisher:
             publish_result = publisher.publish_manifest(
@@ -254,6 +272,12 @@ class BackupMirror:
                 "attempted": True,
                 **publish_result,
             }
+            logger.info(
+                "Backup mirror manifest %s published to %s@%s",
+                manifest["snapshot_id"],
+                publish_result.get("repo"),
+                publish_result.get("branch"),
+            )
         return result
 
     def tracked_files(self) -> list[dict[str, Any]]:

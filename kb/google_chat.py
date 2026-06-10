@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import time
+import logging
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -9,6 +9,9 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from kb.config import CitadelConfig
+from kb.retry import retry_after_seconds, run_with_retries
+
+logger = logging.getLogger(__name__)
 
 CHAT_SCOPE = "https://www.googleapis.com/auth/chat.bot"
 CHAT_API_ROOT = "https://chat.googleapis.com/v1"
@@ -80,12 +83,28 @@ class GoogleChatDelivery:
             query["messageId"] = self._message_id(message_id)
         url = f"{CHAT_API_ROOT}/{self.space_name}/messages?{urlencode(query)}"
 
-        for attempt in range(self.retry_count + 1):
-            result = self._post_once(url, body)
-            if result["ok"] or not result.get("retryable") or attempt >= self.retry_count:
-                return {key: value for key, value in result.items() if key != "retryable"}
-            time.sleep(min(4.0, 0.5 * (2**attempt)))
-        return {"ok": False, "sent": False, "status_category": "unknown"}
+        result = run_with_retries(
+            lambda: self._post_once(url, body),
+            operation="google_chat.post_digest",
+            max_attempts=self.retry_count + 1,
+            should_retry_result=lambda outcome: not outcome["ok"] and bool(outcome.get("retryable")),
+            retry_after_from_result=lambda outcome: outcome.get("retry_after"),
+        )
+        if result["ok"]:
+            logger.info(
+                "Google Chat digest posted to %s (status %s)",
+                self.space_name,
+                result.get("status_code"),
+            )
+        else:
+            logger.error(
+                "Google Chat digest post failed: status_category=%s status_code=%s",
+                result.get("status_category"),
+                result.get("status_code"),
+            )
+        return {
+            key: value for key, value in result.items() if key not in {"retryable", "retry_after"}
+        }
 
     def _post_once(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
         token = self._access_token()
@@ -113,12 +132,19 @@ class GoogleChatDelivery:
                     "retryable": False,
                 }
         except HTTPError as exc:
+            if exc.code in {401, 403}:
+                logger.warning(
+                    "Google Chat rejected the request with HTTP %s (auth_error)", exc.code
+                )
             return {
                 "ok": False,
                 "sent": False,
                 "status_code": exc.code,
                 "status_category": _status_category(exc.code),
                 "retryable": exc.code in {429, 500, 502, 503, 504},
+                "retry_after": retry_after_seconds(
+                    exc.headers.get("Retry-After") if exc.headers is not None else None
+                ),
             }
         except (URLError, TimeoutError):
             return {

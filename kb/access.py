@@ -4,10 +4,13 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 from pathlib import Path
 import secrets
 from typing import Any
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 ROLE_ORDER = {"reader": 1, "writer": 2, "admin": 3}
 VALID_ROLES = frozenset(ROLE_ORDER)
@@ -192,6 +195,7 @@ class AccessStore:
                 continue
             session = self._session_for_token(data, api_token)
             if not session:
+                self._record_token_rejection(data, api_token)
                 return None
             tokens[index] = ApiToken(
                 **{
@@ -208,7 +212,10 @@ class AccessStore:
         data = self._load()
         for api_token in self._tokens(data):
             if api_token.id == token_id:
-                return self._session_for_token(data, api_token)
+                session = self._session_for_token(data, api_token)
+                if not session:
+                    self._record_token_rejection(data, api_token)
+                return session
         return None
 
     def create_principal(
@@ -346,6 +353,37 @@ class AccessStore:
         data["audit_events"] = events
         self._save(data)
         return event
+
+    def _rejection_reason(self, data: dict[str, Any], api_token: ApiToken) -> str | None:
+        principal = self._principal(data, api_token.principal_id)
+        if not principal:
+            return "principal_missing"
+        if principal.disabled_at:
+            return "principal_disabled"
+        if api_token.revoked_at:
+            return "revoked"
+        if _is_expired(api_token.expires_at):
+            return "expired"
+        return None
+
+    def _record_token_rejection(self, data: dict[str, Any], api_token: ApiToken) -> None:
+        reason = self._rejection_reason(data, api_token) or "rejected"
+        logger.warning(
+            "Rejected token %s for principal %s: %s",
+            api_token.id,
+            api_token.principal_id,
+            reason,
+        )
+        self.record_event(
+            action="access.token.rejected",
+            actor=None,
+            success=False,
+            detail={
+                "token_id": api_token.id,
+                "principal_id": api_token.principal_id,
+                "reason": reason,
+            },
+        )
 
     def _session_for_token(self, data: dict[str, Any], api_token: ApiToken) -> TokenSession | None:
         principal = self._principal(data, api_token.principal_id)

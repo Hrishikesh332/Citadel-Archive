@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from kb.config import CitadelConfig
+from kb.retry import run_with_retries
+
+logger = logging.getLogger(__name__)
 
 
 def _github_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -182,10 +186,17 @@ def llm_agent_read(packet: dict[str, Any]) -> list[str] | None:
         },
         method="POST",
     )
-    try:
+    def fetch() -> dict[str, Any]:
         with urlopen(request, timeout=30) as response:
-            body = json.loads(response.read().decode("utf-8") or "{}")
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+            return json.loads(response.read().decode("utf-8") or "{}")
+
+    try:
+        body = run_with_retries(fetch, operation="organization_digest.llm_agent_read")
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Organization digest LLM read failed with %s; falling back to deterministic read",
+            exc.__class__.__name__,
+        )
         return None
 
     choices = body.get("choices") or []
@@ -297,6 +308,11 @@ def build_organization_digest(
         agent_read_source = "deterministic_fallback"
 
     text = format_organization_digest_text(packet, agent_read)
+    logger.info(
+        "Organization digest built: meaningful=%s, agent_read_source=%s",
+        meaningful,
+        agent_read_source,
+    )
     payload: dict[str, Any] = {
         "enabled": True,
         "meaningful": meaningful,

@@ -146,6 +146,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from kb.logging_utils import configure_logging
+
+    configure_logging()
     parser = build_parser()
     args = parser.parse_args()
     asyncio.run(args.handler(args))
