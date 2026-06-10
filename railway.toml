@@ -2,6 +2,11 @@
 builder = "RAILPACK"
 
 [deploy]
+# Same entry command for every service. CITADEL_RUN_MODE selects the role:
+#   web (default)  - FastAPI Organization Vault service
+#   pipeline       - full scheduled run: GitHub org sync, skills catalog
+#                    refresh, self-improvement pass, backup mirror export
+#   github-sync / learning-agent / backup-mirror - single jobs
 startCommand = "python -m scripts.run_railway"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 30

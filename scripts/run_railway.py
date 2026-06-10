@@ -1,10 +1,32 @@
 #!/usr/bin/env python3
-"""Railway run-mode dispatcher for Citadel services."""
+"""Railway run-mode dispatcher for Citadel services.
+
+Modes (via ``CITADEL_RUN_MODE``):
+
+- ``web`` (default): the FastAPI Organization Vault service.
+- ``github-sync`` / ``learning-agent``: the single GitHub org learning job.
+- ``backup-mirror``: the single Vault Backup Mirror export job.
+- ``pipeline`` (also ``all``/``cron``): the full scheduled pipeline —
+  GitHub org sync, skills catalog refresh, self-improvement pass, and backup
+  mirror export. Each stage is toggleable via env, logs a per-stage summary
+  line, and a failed stage never stops the stages after it. The process exits
+  nonzero only when every enabled stage fails.
+"""
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+from typing import Callable
+
+logger = logging.getLogger("citadel.pipeline")
+
+
+def _bool(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def web_command(*, port: str) -> list[str]:
@@ -20,6 +42,115 @@ def web_command(*, port: str) -> list[str]:
     ]
 
 
+def _github_sync_stage() -> int:
+    from scripts.run_github_sync import run as run_github_sync
+
+    return run_github_sync()
+
+
+def _skills_refresh_stage() -> int:
+    from kb.skills import refresh_skill_catalog
+
+    result = refresh_skill_catalog()
+    logger.info(
+        "Skills catalog refreshed: skills=%s changed=%s added=%s removed=%s",
+        result["skills"],
+        ",".join(result["changed"]) or "none",
+        ",".join(result["added"]) or "none",
+        ",".join(result["removed"]) or "none",
+    )
+    return 0
+
+
+def _self_improve_stage() -> int:
+    from scripts.run_self_improve import run as run_self_improve
+
+    return run_self_improve()
+
+
+def _backup_mirror_stage() -> int:
+    from scripts.run_backup_mirror import run as run_backup_mirror
+
+    return run_backup_mirror()
+
+
+def pipeline_stages() -> list[tuple[str, bool, Callable[[], int]]]:
+    """(name, enabled, runner) for every pipeline stage, in execution order."""
+    return [
+        (
+            "github_sync",
+            _bool(os.getenv("CITADEL_PIPELINE_GITHUB_SYNC_ENABLED"), default=True),
+            _github_sync_stage,
+        ),
+        (
+            "skills_refresh",
+            _bool(os.getenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED"), default=True),
+            _skills_refresh_stage,
+        ),
+        (
+            "self_improve",
+            _bool(os.getenv("CITADEL_SELF_IMPROVE_ENABLED"), default=False),
+            _self_improve_stage,
+        ),
+        (
+            "backup_mirror",
+            _bool(os.getenv("CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED"), default=True),
+            _backup_mirror_stage,
+        ),
+    ]
+
+
+def run_pipeline() -> int:
+    """Run every enabled stage; continue past failures.
+
+    Exit code is nonzero only when all enabled stages fail, so one flaky
+    source never blocks the rest of the scheduled learning work.
+    """
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            stream=sys.stdout,
+        )
+
+    succeeded: list[str] = []
+    failed: list[str] = []
+    skipped: list[str] = []
+    for name, enabled, runner in pipeline_stages():
+        if not enabled:
+            skipped.append(name)
+            logger.info("Pipeline stage %s: skipped (disabled via env)", name)
+            continue
+        logger.info("Pipeline stage %s: starting", name)
+        try:
+            code = runner()
+        except Exception as exc:
+            logger.error(
+                "Pipeline stage %s: FAILED with %s: %s",
+                name,
+                exc.__class__.__name__,
+                exc,
+            )
+            failed.append(name)
+            continue
+        if code == 0:
+            succeeded.append(name)
+            logger.info("Pipeline stage %s: ok", name)
+        else:
+            failed.append(name)
+            logger.error("Pipeline stage %s: FAILED with exit code %s", name, code)
+
+    logger.info(
+        "Pipeline finished: succeeded=%s failed=%s skipped=%s",
+        ",".join(succeeded) or "none",
+        ",".join(failed) or "none",
+        ",".join(skipped) or "none",
+    )
+    if failed and not succeeded:
+        return 1
+    return 0
+
+
 def run(mode: str | None = None) -> int:
     resolved_mode = (mode or os.getenv("CITADEL_RUN_MODE") or "web").strip() or "web"
     if resolved_mode == "web":
@@ -33,6 +164,8 @@ def run(mode: str | None = None) -> int:
         from scripts.run_backup_mirror import run as run_backup_mirror
 
         return run_backup_mirror()
+    if resolved_mode in {"pipeline", "all", "cron"}:
+        return run_pipeline()
     print(f"Unsupported CITADEL_RUN_MODE: {resolved_mode}", file=sys.stderr)
     return 1
 

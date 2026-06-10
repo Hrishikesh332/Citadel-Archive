@@ -169,3 +169,42 @@ def test_get_skill_boundary_alias() -> None:
     response = client.get("/skills/privacy")
     assert response.status_code == 200
     assert "Public vs Private" in response.text
+
+
+def test_refresh_skill_catalog_tracks_changes(tmp_path) -> None:
+    import json
+
+    from kb.skills import refresh_skill_catalog
+
+    state = tmp_path / "skills_catalog.json"
+
+    first = refresh_skill_catalog(state)
+    assert first["ok"] is True
+    assert first["skills"] == 3
+    assert first["added"] == ["boundary", "connect", "vault"]
+    assert first["changed"] == []
+    assert first["removed"] == []
+
+    second = refresh_skill_catalog(state)
+    assert second["added"] == []
+    assert second["changed"] == []
+
+    # Simulate a stale recorded hash: the next refresh reports the change.
+    stored = json.loads(state.read_text(encoding="utf-8"))
+    stored["skills"]["vault"] = "0" * 64
+    state.write_text(json.dumps(stored), encoding="utf-8")
+
+    third = refresh_skill_catalog(state)
+    assert third["changed"] == ["vault"]
+
+
+def test_refresh_skill_catalog_recovers_from_corrupt_state(tmp_path) -> None:
+    from kb.skills import refresh_skill_catalog
+
+    state = tmp_path / "skills_catalog.json"
+    state.write_text("{not json", encoding="utf-8")
+
+    result = refresh_skill_catalog(state)
+
+    assert result["ok"] is True
+    assert result["added"] == ["boundary", "connect", "vault"]

@@ -78,3 +78,115 @@ def test_backup_mirror_mode_runs_backup_job(monkeypatch: Any) -> None:
 
 def test_unknown_mode_fails() -> None:
     assert run_railway.run("not-real") == 1
+
+
+def _patch_stages(
+    monkeypatch: Any,
+    calls: list[str],
+    *,
+    github_code: int = 0,
+    backup_code: int = 0,
+    self_improve_code: int = 0,
+    github_raises: bool = False,
+    skills_raises: bool = False,
+) -> None:
+    from scripts import run_backup_mirror, run_github_sync, run_self_improve
+
+    import kb.skills as skills
+
+    def fake_github() -> int:
+        calls.append("github_sync")
+        if github_raises:
+            raise RuntimeError("github exploded")
+        return github_code
+
+    def fake_skills_refresh(state_path: Any = None) -> dict[str, Any]:
+        calls.append("skills_refresh")
+        if skills_raises:
+            raise RuntimeError("skills exploded")
+        return {"ok": True, "skills": 3, "changed": [], "added": [], "removed": []}
+
+    def fake_self_improve() -> int:
+        calls.append("self_improve")
+        return self_improve_code
+
+    def fake_backup() -> int:
+        calls.append("backup_mirror")
+        return backup_code
+
+    monkeypatch.setattr(run_github_sync, "run", fake_github)
+    monkeypatch.setattr(skills, "refresh_skill_catalog", fake_skills_refresh)
+    monkeypatch.setattr(run_self_improve, "run", fake_self_improve)
+    monkeypatch.setattr(run_backup_mirror, "run", fake_backup)
+
+
+def _clear_pipeline_env(monkeypatch: Any) -> None:
+    for name in (
+        "CITADEL_PIPELINE_GITHUB_SYNC_ENABLED",
+        "CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED",
+        "CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED",
+        "CITADEL_SELF_IMPROVE_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_pipeline_runs_all_enabled_stages_in_order(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_SELF_IMPROVE_ENABLED", "true")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "skills_refresh", "self_improve", "backup_mirror"]
+
+
+def test_pipeline_self_improve_stage_is_off_by_default(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "skills_refresh", "backup_mirror"]
+
+
+def test_pipeline_stage_toggles_disable_individual_stages(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED", "false")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync"]
+
+
+def test_pipeline_continues_past_a_failed_stage(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls, github_raises=True)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "skills_refresh", "backup_mirror"]
+
+
+def test_pipeline_exits_nonzero_only_when_all_enabled_stages_fail(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls, github_raises=True, backup_code=1)
+
+    assert run_railway.run("pipeline") == 1
+    assert calls == ["github_sync", "backup_mirror"]
+
+
+def test_pipeline_mode_aliases_with_everything_disabled(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_PIPELINE_GITHUB_SYNC_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED", "false")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("all") == 0
+    assert run_railway.run("cron") == 0
+    assert calls == []
