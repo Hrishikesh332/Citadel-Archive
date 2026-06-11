@@ -19,6 +19,8 @@ async def test_record_ingest_adds_document_node_and_event() -> None:
     assert document_nodes[0]["label"] == "Runbook: rotate keys"
     assert snapshot["events"][0]["type"] == "ingest"
     assert snapshot["events"][0]["details"]["dataset"] == "notes"
+    assert snapshot["events"][0]["timeline"]["kind"] == "chunk_indexed"
+    assert snapshot["stats"]["indexed_chunks"] == 1
 
 
 async def test_rejected_ingest_records_reject_event_without_document() -> None:
@@ -100,3 +102,33 @@ async def test_snapshot_contains_base_indexes() -> None:
         "feedback",
         "global",
     }
+
+
+async def test_timeline_tracks_chunks_and_resume_filters() -> None:
+    mesh = MeshState()
+
+    await mesh.record_ingest(
+        CONFIG,
+        IngestResult(True, "accepted", "notes", ("ops",)),
+        data="Runbook: rotate keys",
+        dataset="notes",
+        tags=["ops"],
+    )
+    await mesh.record_enrichment(
+        CONFIG,
+        dataset="notes",
+        chunks=3,
+        used_llm=False,
+        reason="fallback",
+    )
+    await mesh.record_search(CONFIG, query="rotate", dataset="notes", result_count=2)
+
+    resumed = await mesh.timeline(after_id=1, limit=1)
+    chunk_events = await mesh.timeline(kind="chunk_indexed", limit=5)
+
+    assert resumed["latest_event_id"] == 3
+    assert resumed["truncated"] is True
+    assert [event["id"] for event in resumed["events"]] == [3]
+    assert [event["id"] for event in chunk_events["events"]] == [2, 1]
+    assert chunk_events["stats"]["indexed_chunks"] == 4
+    assert chunk_events["stats"]["last_indexed_at"] == chunk_events["events"][0]["created_at"]

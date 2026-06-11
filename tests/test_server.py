@@ -325,6 +325,47 @@ def test_api_uses_configured_citadel_service() -> None:
     assert upgrade.status_code == 200
 
 
+def test_knowledge_events_api_returns_resumable_timeline() -> None:
+    client = authed_client()
+
+    ingest = client.post("/ingest", json={"data": "A useful note", "tags": ["research"]})
+    search = client.post("/search", json={"query": "useful", "top_k": 3})
+    timeline = client.get("/api/knowledge/events?limit=10")
+    resumed = client.get("/api/knowledge/events?after_id=1&limit=1")
+    chunked = client.get("/api/knowledge/events?kind=chunk_indexed")
+    typed = client.get("/api/knowledge/events?type=search")
+    invalid_limit = client.get("/api/knowledge/events?limit=0")
+    invalid_after = client.get("/api/knowledge/events?after_id=-1")
+    unauthenticated = TestClient(app, base_url="https://testserver").get(
+        "/api/knowledge/events"
+    )
+
+    assert ingest.status_code == 200
+    assert search.status_code == 200
+    assert timeline.status_code == 200
+    timeline_body = timeline.json()
+    assert timeline_body["ok"] is True
+    assert timeline_body["latest_event_id"] == timeline_body["stats"]["latest_event_id"]
+    assert timeline_body["stats"]["indexed_chunks"] == 1
+    assert timeline_body["events"][0]["type"] == "search"
+    assert timeline_body["events"][0]["timeline"] == {
+        "kind": "retrieval_served",
+        "status": "searched",
+        "dataset": "notes",
+        "source": "search",
+        "metrics": {"results": 1},
+    }
+    assert resumed.status_code == 200
+    assert [event["id"] for event in resumed.json()["events"]] == [2]
+    assert chunked.status_code == 200
+    assert [event["id"] for event in chunked.json()["events"]] == [1]
+    assert typed.status_code == 200
+    assert [event["type"] for event in typed.json()["events"]] == ["search"]
+    assert invalid_limit.status_code == 422
+    assert invalid_after.status_code == 422
+    assert unauthenticated.status_code == 401
+
+
 def test_reader_access_can_view_and_search_but_not_mutate() -> None:
     client = authed_client("test-reader")
 

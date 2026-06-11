@@ -36,6 +36,10 @@ class MeshState:
     feedback_items: int = 0
     upgrades: int = 0
     errors: int = 0
+    indexed_chunks: int = 0
+    pending_chunks: int = 0
+    failed_chunks: int = 0
+    last_indexed_at: str | None = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
@@ -63,11 +67,47 @@ class MeshState:
                     "feedback": self.feedback_items,
                     "upgrades": self.upgrades,
                     "errors": self.errors,
+                    "indexed_chunks": self.indexed_chunks,
+                    "pending_chunks": self.pending_chunks,
+                    "failed_chunks": self.failed_chunks,
+                    "last_indexed_at": self.last_indexed_at,
+                    "latest_event_id": self.revision,
                 },
                 "indexes": indexes,
                 "nodes": list(self.nodes.values()),
                 "edges": list(self.edges.values()),
                 "events": list(self.events),
+            }
+
+    async def timeline(
+        self,
+        *,
+        after_id: int | None = None,
+        limit: int = 50,
+        event_type: str | None = None,
+        kind: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a bounded, newest-first event timeline for resume/backfill reads."""
+        async with self._lock:
+            events = list(self.events)
+            if after_id is not None:
+                events = [event for event in events if int(event["id"]) > after_id]
+            if event_type:
+                events = [event for event in events if event.get("type") == event_type]
+            if kind:
+                events = [
+                    event
+                    for event in events
+                    if event.get("timeline", {}).get("kind") == kind
+                ]
+            return {
+                "generated_at": utc_now(),
+                "latest_event_id": self.revision,
+                "oldest_available_id": self.events[-1]["id"] if self.events else None,
+                "limit": limit,
+                "truncated": len(events) > limit,
+                "stats": self._timeline_stats(),
+                "events": events[:limit],
             }
 
     async def record_ingest(
@@ -107,7 +147,12 @@ class MeshState:
                 await self._record_event(
                     "ingest",
                     "Memory indexed",
-                    {"dataset": dataset, "reason": result.reason, "tags": list(result.tags)},
+                    {
+                        "dataset": dataset,
+                        "reason": result.reason,
+                        "tags": list(result.tags),
+                        "chunks": 1,
+                    },
                 )
             else:
                 await self._record_event(
@@ -238,6 +283,7 @@ class MeshState:
                 "GitHub sync completed",
                 {
                     "org": result.get("org"),
+                    "dataset": result.get("dataset") or result.get("org"),
                     "repos": result.get("repos_scanned"),
                     "changed": result.get("changed_count"),
                     "events": result.get("event_count"),
@@ -303,6 +349,7 @@ class MeshState:
                 {
                     "vault_id": vault.get("id"),
                     "vault_name": vault.get("name"),
+                    "dataset": dataset or config.default_dataset,
                     "accepted": len(result.get("accepted", [])),
                     "skipped": len(result.get("skipped", [])),
                     "conflicts": len(result.get("conflicts", [])),
@@ -470,15 +517,91 @@ class MeshState:
 
     async def _record_event(self, event_type: str, message: str, details: dict[str, Any]) -> None:
         self.revision += 1
+        created_at = utc_now()
+        safe_details = self._redact_details(details)
+        timeline = self._timeline_envelope(event_type, safe_details)
+        self._apply_timeline_stats(timeline, created_at)
         event = {
             "id": self.revision,
             "type": event_type,
             "message": message,
-            "details": details,
-            "created_at": utc_now(),
+            "details": safe_details,
+            "timeline": timeline,
+            "created_at": created_at,
         }
         self.events.appendleft(event)
         self._publish(event)
+
+    def _timeline_stats(self) -> dict[str, Any]:
+        return {
+            "indexed_chunks": self.indexed_chunks,
+            "pending_chunks": self.pending_chunks,
+            "failed_chunks": self.failed_chunks,
+            "last_indexed_at": self.last_indexed_at,
+            "latest_event_id": self.revision,
+        }
+
+    def _apply_timeline_stats(self, timeline: dict[str, Any], created_at: str) -> None:
+        if timeline["kind"] == "chunk_indexed":
+            chunks = timeline["metrics"].get("chunks")
+            self.indexed_chunks += max(int(chunks or 1), 0)
+            self.last_indexed_at = created_at
+        if timeline["status"] == "failed":
+            self.failed_chunks += 1
+
+    def _timeline_envelope(self, event_type: str, details: dict[str, Any]) -> dict[str, Any]:
+        profiles = {
+            "ingest": ("chunk_indexed", "indexed", "manual_ingest"),
+            "reject": ("chunk_rejected", "rejected", "manual_ingest"),
+            "search": ("retrieval_served", "searched", "search"),
+            "feedback": ("feedback_recorded", "recorded", "feedback"),
+            "upgrade": ("agent_action", "completed", "self_upgrade"),
+            "github_sync": ("source_synced", "synced", "github"),
+            "obsidian_sync": ("source_synced", "synced", "obsidian"),
+            "enrichment": ("chunk_indexed", "indexed", "enrichment"),
+            "optimization": ("agent_action", "completed", "self_improvement"),
+            "conflict": ("conflict_detected", "detected", "conflict_detector"),
+            "error": ("pipeline_error", "failed", "runtime"),
+        }
+        kind, status, source = profiles.get(event_type, ("agent_action", "recorded", "runtime"))
+        return {
+            "kind": kind,
+            "status": status,
+            "dataset": details.get("dataset") or details.get("org") or details.get("vault_id"),
+            "source": details.get("source") or details.get("operation") or source,
+            "metrics": self._timeline_metrics(details),
+        }
+
+    def _timeline_metrics(self, details: dict[str, Any]) -> dict[str, int | float]:
+        metric_keys = {
+            "chunks",
+            "results",
+            "repos",
+            "changed",
+            "events",
+            "accepted",
+            "skipped",
+            "conflicts",
+            "reviewed",
+            "optimized",
+        }
+        metrics: dict[str, int | float] = {}
+        for key in metric_keys:
+            value = details.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                metrics[key] = value
+        return metrics
+
+    def _redact_details(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return redact_secrets(value)
+        if isinstance(value, dict):
+            return {key: self._redact_details(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._redact_details(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._redact_details(item) for item in value]
+        return value
 
     def _publish(self, event: dict[str, Any]) -> None:
         dead_queues: list[asyncio.Queue[dict[str, Any]]] = []

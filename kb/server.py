@@ -12,7 +12,7 @@ import re
 import secrets
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -1033,6 +1033,28 @@ async def mesh(request: Request) -> Any:
     require_access(request, "reader", "kb:read")
     citadel = get_citadel()
     return jsonable_encoder(await get_mesh().snapshot(citadel.config))
+
+
+@app.get("/api/knowledge/events")
+async def knowledge_events(
+    request: Request,
+    after_id: int | None = None,
+    limit: int = 50,
+    event_type: str | None = Query(default=None, alias="type"),
+    kind: str | None = None,
+) -> Any:
+    require_access(request, "reader", "kb:read")
+    if after_id is not None and after_id < 0:
+        raise HTTPException(status_code=422, detail="after_id must be zero or greater.")
+    if not 1 <= limit <= 160:
+        raise HTTPException(status_code=422, detail="Timeline limit must be between 1 and 160.")
+    timeline = await get_mesh().timeline(
+        after_id=after_id,
+        limit=limit,
+        event_type=event_type,
+        kind=kind,
+    )
+    return jsonable_encoder({"ok": True, **timeline})
 
 
 @app.get("/api/mesh/graph")
