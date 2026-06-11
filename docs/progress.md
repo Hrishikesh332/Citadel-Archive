@@ -1,6 +1,56 @@
 # Citadel Progress
 
-Last updated: 2026-06-08.
+Last updated: 2026-06-11.
+
+## 2026-06-11
+
+- Shipped the Logseq-inspired Live Knowledge Timeline work in small commits:
+  - `2ea4f46` (`docs: map live knowledge timeline`) captured the product map,
+    fast read path, live update path, event model, and performance rules.
+  - `e17d9af` (`feat(api): add knowledge event timeline`) added normalized mesh
+    event envelopes and `GET /api/knowledge/events` with `after_id`, `limit`,
+    `type`, and `kind` filters.
+  - `b484817` (`feat(ui): add live knowledge timeline`) rebuilt the Activity
+    page into a live timeline with chunk freshness counters, selectable event
+    rows, an inspector, and graph focus for related dataset/source/vault/org
+    nodes.
+  - `a2f3a19` (`docs: document live knowledge timeline`) updated README and the
+    timeline design doc after the feature shipped.
+- Added timeline freshness state to `/api/mesh` snapshots:
+  - `indexed_chunks`, `pending_chunks`, `failed_chunks`, `last_indexed_at`, and
+    `latest_event_id` now give the UI a fast indexed/chunked status read without
+    fetching raw source data.
+  - Live SSE mesh events keep the existing `id`, `type`, `message`, `details`,
+    and `created_at` fields and now include a compact `timeline` envelope.
+- Verified the backend and UI changes before pushing:
+  - `uv run pytest tests/test_mesh.py tests/test_server.py` passed.
+  - `uv run ruff check kb/mesh.py kb/server.py tests/test_mesh.py tests/test_server.py` passed.
+  - `node --check kb/static/app.js` passed.
+  - `git diff --check` passed.
+- Confirmed production data safety before running sync work:
+  - Railway production services `Citadel-Archive`, `Citadel-GitHub-Sync`, and
+    `Postgres` all reported `SUCCESS` and `stopped=false`.
+  - Postgres still has its dedicated persistent `/var/lib/postgresql/data`
+    volume; the web and GitHub sync services both have `/data` volumes.
+  - The GitHub sync service has `DATABASE_URL` and
+    `CITADEL_GITHUB_SYNC_TARGET_URL`, so the manual cron run targeted the
+    production web API and production database path rather than local defaults.
+- Ran the GitHub sync cron path manually through Railway production variables:
+  - The run called `https://citadel-archive-production.up.railway.app/api/learning-agent/run`.
+  - It completed with `ok=true`, `dry_run=false`, `ingested=true`, and
+    `improved=false`.
+  - It scanned 42 repositories, found 2 changed repositories, 50 organization
+    events, 10 commits, 4 open PRs, and 6 merged PRs.
+  - The security scanner returned `ok=true`, `blocked=false`, and
+    `finding_count=0`; Google Chat remained disabled.
+- Ran the Vault Backup Mirror cron wrapper safely through the production web API
+  in dry-run mode:
+  - The manifest dry run returned `ok=true`, tracked 3 files, found 2 available
+    files, 1 missing Obsidian state file, and 105501 tracked bytes.
+  - It wrote and published nothing because production backup mirror config still
+    has `enabled=false` and push disabled.
+  - The manifest policy still excludes raw tokens, secret values, source bodies,
+    embeddings, vector indexes, graph databases, and large binaries.
 
 ## 2026-06-08
 
