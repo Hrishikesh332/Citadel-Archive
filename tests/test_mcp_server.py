@@ -300,6 +300,38 @@ def test_contribute_tool_posts_through_the_contribute_endpoint() -> None:
     )
 
 
+def test_list_sources_includes_repo_content_sync() -> None:
+    client = FakeHttpClient()
+    server = create_mcp_server(client)
+
+    result = run_tool(server, "citadel_list_sources", None)
+
+    paths = [call["path"] for call in client.gets]
+    assert "/api/repo-content-sync" in paths
+    assert "/api/sources" in paths
+    assert result["repo_content_sync"]["path"] == "/api/repo-content-sync"
+
+
+def test_run_repo_content_sync_tool_posts_to_admin_endpoint() -> None:
+    client = FakeHttpClient()
+    server = create_mcp_server(client)
+
+    result = run_tool(server, "citadel_run_repo_content_sync", None, force=True, dry_run=True)
+
+    assert result["path"] == "/api/repo-content-sync/run"
+    assert client.posts[-1]["payload"] == {"force": True, "dry_run": True}
+
+
+def test_recent_contributions_tool_reads_audit_feed() -> None:
+    client = FakeHttpClient()
+    server = create_mcp_server(client)
+
+    result = run_tool(server, "citadel_recent_contributions", None, limit=5, mine=True)
+
+    assert result["path"] == "/api/contributions/recent?limit=5&mine=true"
+    assert client.gets[-1]["tool_name"] == "citadel_recent_contributions"
+
+
 def test_contribute_tool_rejects_empty_or_oversized_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

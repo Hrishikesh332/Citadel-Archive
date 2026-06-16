@@ -152,6 +152,28 @@ TOOL_POLICIES: dict[str, ToolPolicy] = {
             openWorldHint=True,
         ),
     ),
+    "citadel_run_repo_content_sync": ToolPolicy(
+        role="admin",
+        scope="sources:sync",
+        risk="admin_job",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    ),
+    "citadel_recent_contributions": ToolPolicy(
+        role="reader",
+        scope="kb:read",
+        risk="read",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    ),
     "citadel_backup_mirror_status": ToolPolicy(
         role="admin",
         scope="sources:sync",
@@ -581,6 +603,11 @@ def create_mcp_server(
                     tool_name="citadel_list_sources",
                 ),
                 "github_sync": http.get("/api/github-sync", tool_name="citadel_list_sources"),
+                "repo_content_sync": http.get(
+                    "/api/repo-content-sync",
+                    tool_name="citadel_list_sources",
+                ),
+                "sources": http.get("/api/sources", tool_name="citadel_list_sources"),
                 "indexes": http.get("/api/indexes", tool_name="citadel_list_sources"),
             }
 
@@ -689,6 +716,40 @@ def create_mcp_server(
                 tool_name="citadel_run_learning_agent",
             ),
         )
+
+    @mcp.tool(annotations=TOOL_POLICIES["citadel_run_repo_content_sync"].annotations)
+    async def citadel_run_repo_content_sync(
+        ctx: Context,
+        force: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Sync READMEs, skills, and docs from allowlisted repos through cognify."""
+        return await _call_async(
+            "citadel_run_repo_content_sync",
+            lambda: resolve_client(ctx).post(
+                "/api/repo-content-sync/run",
+                {"force": force, "dry_run": dry_run},
+                tool_name="citadel_run_repo_content_sync",
+            ),
+        )
+
+    @mcp.tool(annotations=TOOL_POLICIES["citadel_recent_contributions"].annotations)
+    async def citadel_recent_contributions(
+        ctx: Context,
+        limit: int = 20,
+        mine: bool = False,
+    ) -> dict[str, Any]:
+        """List recent vault contributions from teammates and agents."""
+        bounded_limit = max(1, min(limit, 100))
+
+        def fetch_contributions() -> dict[str, Any]:
+            query = urlencode({"limit": bounded_limit, "mine": str(mine).lower()})
+            return resolve_client(ctx).get(
+                f"/api/contributions/recent?{query}",
+                tool_name="citadel_recent_contributions",
+            )
+
+        return await _call_async("citadel_recent_contributions", fetch_contributions)
 
     @mcp.tool(annotations=TOOL_POLICIES["citadel_backup_mirror_status"].annotations)
     async def citadel_backup_mirror_status(ctx: Context) -> dict[str, Any]:

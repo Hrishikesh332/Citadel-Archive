@@ -51,6 +51,7 @@ Use:
 - `citadel_search` for vault search. Include `dataset` when targeting a known dataset.
 - `citadel_get_mesh` for the current knowledge mesh state.
 - `citadel_list_sources` for GitHub/source-learning/index status.
+- `citadel_recent_contributions` for recent teammate vault contributions (`mine=true` for yours).
 - `citadel://discovery`, `citadel://session`, `citadel://sources`,
   `citadel://indexes`, or `citadel://events/recent` for lightweight context.
 
@@ -77,6 +78,7 @@ Use:
   optional `tags`/`source_url`). It routes through the Learning Process with
   Knowledge Conflict detection on and LLM enrichment when the vault enables it,
   and returns `{accepted, chunks, conflict}`. Same path as `POST /api/contribute`.
+  Contributions are auto-tagged with `vault-contribution` and `author:<name>`.
 - `citadel_ingest` for raw durable notes. Include meaningful `tags`.
 - `citadel_record_feedback` for Cognee QA feedback.
 
@@ -105,7 +107,8 @@ decisions and source facts instead of storing raw transcripts or logs.
 
 Use admin tools **only when explicitly requested by the user**:
 
-- `citadel_run_learning_agent` — runs GitHub source sync and ingest
+- `citadel_run_learning_agent` — runs GitHub digest sync **and** repo content sync
+- `citadel_run_repo_content_sync` — sync READMEs/skills/docs from allowlisted repos
 - `citadel_backup_mirror_status` — inspects backup mirror manifest status
 - `citadel_run_backup_mirror` — runs backup mirror manifest export
 - `citadel_audit_events` — inspects bounded audit events
