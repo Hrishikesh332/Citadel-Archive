@@ -33,15 +33,24 @@ def _int(value: str | None, *, default: int) -> int:
         return default
 
 
-def _github_state_path(value: str | None) -> str:
-    if value:
-        return value
-    root = (
+def _state_root() -> str:
+    return (
         os.getenv("CITADEL_STATE_DIRECTORY")
         or os.getenv("SYSTEM_ROOT_DIRECTORY")
         or ("/data/.citadel" if Path("/data").exists() else ".citadel")
     )
-    return str(Path(root) / "github_sync_state.json")
+
+
+def _github_state_path(value: str | None) -> str:
+    if value:
+        return value
+    return str(Path(_state_root()) / "github_sync_state.json")
+
+
+def _repo_content_sync_state_path(value: str | None) -> str:
+    if value:
+        return value
+    return str(Path(_state_root()) / "repo_content_sync_state.json")
 
 
 def _access_store_path(value: str | None) -> str:
@@ -123,7 +132,7 @@ class CitadelConfig:
     github_sync_max_commits_per_repo: int = 5
     github_sync_max_pull_requests_per_repo: int = 5
     github_sync_include_commits: bool = True
-    github_sync_run_improve: bool = False
+    github_sync_run_improve: bool = True
     github_sync_ingest_unchanged: bool = True
     github_sync_include_private: bool = True
     github_sync_repo_allowlist: tuple[str, ...] = field(default_factory=tuple)
@@ -131,6 +140,18 @@ class CitadelConfig:
     github_sync_security_scan_enabled: bool = True
     github_sync_security_block_severity: str = "high"
     github_token: str | None = None
+    repo_content_sync_enabled: bool = True
+    repo_content_sync_dataset: str = "masumi-network"
+    repo_content_sync_session: str = "masumi-repo-content"
+    repo_content_sync_state_path: str = ".citadel/repo_content_sync_state.json"
+    repo_content_sync_repos: tuple[str, ...] = field(default_factory=tuple)
+    repo_content_sync_root_paths: tuple[str, ...] = field(default_factory=tuple)
+    repo_content_sync_tree_prefixes: tuple[str, ...] = field(default_factory=tuple)
+    repo_content_sync_tree_extensions: tuple[str, ...] = field(default_factory=tuple)
+    repo_content_sync_max_files_per_repo: int = 40
+    repo_content_sync_max_bytes_per_file: int = 120_000
+    repo_content_sync_run_improve: bool = True
+    contribute_run_improve: bool = False
     organization_digest_enabled: bool = True
     organization_digest_window_hours: int = 24
     organization_digest_max_items: int = 6
@@ -209,7 +230,7 @@ class CitadelConfig:
                 os.getenv("CITADEL_GITHUB_SYNC_INCLUDE_COMMITS"),
                 default=True,
             ),
-            github_sync_run_improve=_bool(os.getenv("CITADEL_GITHUB_SYNC_RUN_IMPROVE"), default=False),
+            github_sync_run_improve=_bool(os.getenv("CITADEL_GITHUB_SYNC_RUN_IMPROVE"), default=True),
             github_sync_ingest_unchanged=_bool(
                 os.getenv("CITADEL_GITHUB_SYNC_INGEST_UNCHANGED"),
                 default=True,
@@ -233,6 +254,49 @@ class CitadelConfig:
                 "high",
             ),
             github_token=os.getenv("CITADEL_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN") or None,
+            repo_content_sync_enabled=_bool(
+                os.getenv("CITADEL_REPO_CONTENT_SYNC_ENABLED"),
+                default=True,
+            ),
+            repo_content_sync_dataset=os.getenv(
+                "CITADEL_REPO_CONTENT_SYNC_DATASET",
+                os.getenv("CITADEL_GITHUB_SYNC_DATASET", "masumi-network"),
+            ),
+            repo_content_sync_session=os.getenv(
+                "CITADEL_REPO_CONTENT_SYNC_SESSION",
+                "masumi-repo-content",
+            ),
+            repo_content_sync_state_path=_repo_content_sync_state_path(
+                os.getenv("CITADEL_REPO_CONTENT_SYNC_STATE_PATH")
+            ),
+            repo_content_sync_repos=tuple(
+                _csv(os.getenv("CITADEL_REPO_CONTENT_SYNC_REPOS"))
+            ),
+            repo_content_sync_root_paths=tuple(
+                _csv(os.getenv("CITADEL_REPO_CONTENT_SYNC_ROOT_PATHS"))
+            ),
+            repo_content_sync_tree_prefixes=tuple(
+                _csv(os.getenv("CITADEL_REPO_CONTENT_SYNC_TREE_PREFIXES"))
+            ),
+            repo_content_sync_tree_extensions=tuple(
+                _csv(os.getenv("CITADEL_REPO_CONTENT_SYNC_TREE_EXTENSIONS"))
+            ),
+            repo_content_sync_max_files_per_repo=_int(
+                os.getenv("CITADEL_REPO_CONTENT_SYNC_MAX_FILES_PER_REPO"),
+                default=40,
+            ),
+            repo_content_sync_max_bytes_per_file=_int(
+                os.getenv("CITADEL_REPO_CONTENT_SYNC_MAX_BYTES_PER_FILE"),
+                default=120_000,
+            ),
+            repo_content_sync_run_improve=_bool(
+                os.getenv("CITADEL_REPO_CONTENT_SYNC_RUN_IMPROVE"),
+                default=True,
+            ),
+            contribute_run_improve=_bool(
+                os.getenv("CITADEL_CONTRIBUTE_RUN_IMPROVE"),
+                default=False,
+            ),
             organization_digest_enabled=_bool(
                 os.getenv("CITADEL_ORG_DIGEST_ENABLED"),
                 default=True,
