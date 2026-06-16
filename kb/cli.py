@@ -8,6 +8,7 @@ from typing import Any
 from kb.github_sync import GitHubOrgSyncer
 from kb.learning_agent import LearningAgent
 from kb.models import FeedbackRequest
+from kb.repo_content_sync import RepoContentSyncer
 from kb.service import Citadel
 
 
@@ -73,6 +74,12 @@ async def _sync_github(args: argparse.Namespace) -> None:
     _print_json(result)
 
 
+async def _sync_repo_content(args: argparse.Namespace) -> None:
+    syncer = RepoContentSyncer(Citadel.from_env())
+    result = await syncer.run(force=args.force, dry_run=args.dry_run)
+    _print_json(result)
+
+
 async def _learn(args: argparse.Namespace) -> None:
     agent = LearningAgent.from_env()
     result = await agent.status() if args.status else await agent.run(
@@ -130,6 +137,14 @@ def build_parser() -> argparse.ArgumentParser:
     sync_github.add_argument("--skip-commits", action="store_true")
     sync_github.add_argument("--skip-unchanged", action="store_true")
     sync_github.set_defaults(handler=_sync_github)
+
+    sync_repo_content = subcommands.add_parser(
+        "sync-repo-content",
+        help="Fetch READMEs, skills, and docs from allowlisted repos and cognify them",
+    )
+    sync_repo_content.add_argument("--force", action="store_true")
+    sync_repo_content.add_argument("--dry-run", action="store_true")
+    sync_repo_content.set_defaults(handler=_sync_repo_content)
 
     learn = subcommands.add_parser(
         "learn",
