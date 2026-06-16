@@ -11,6 +11,7 @@ from kb.google_chat import GoogleChatDelivery
 from kb.github_sync import GitHubOrgSyncer
 from kb.notification_gateways import NotificationGateway, configured_gateways, gateway_statuses
 from kb.organization_digest import build_organization_digest
+from kb.repo_content_sync import RepoContentSyncer
 from kb.service import Citadel
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,13 @@ class LearningAgent:
         citadel: Citadel,
         *,
         github_syncer: GitHubOrgSyncer | None = None,
+        repo_content_syncer: RepoContentSyncer | None = None,
         google_chat: GoogleChatDelivery | None = None,
         gateways: Mapping[str, NotificationGateway] | None = None,
     ) -> None:
         self.citadel = citadel
         self.github_syncer = github_syncer or GitHubOrgSyncer(citadel)
+        self.repo_content_syncer = repo_content_syncer or RepoContentSyncer(citadel)
         configured = dict(gateways) if gateways is not None else configured_gateways(citadel.config)
         if google_chat is not None:
             configured["google_chat"] = google_chat
@@ -41,6 +44,7 @@ class LearningAgent:
 
     async def status(self) -> dict[str, Any]:
         github_status = await self.github_syncer.status()
+        repo_content_status = await self.repo_content_syncer.status()
         notification_statuses = self._gateway_statuses()
         return {
             "ok": True,
@@ -48,6 +52,7 @@ class LearningAgent:
             "mode": "github-source-learning",
             "sources": {
                 "github": github_status,
+                "repo_content": repo_content_status,
             },
             "organization_digest": {
                 "enabled": self.citadel.config.organization_digest_enabled,
@@ -65,6 +70,8 @@ class LearningAgent:
                 "summarize_github_events",
                 "summarize_recent_commits",
                 "ingest_source_digest",
+                "sync_repo_content",
+                "cognify_product_knowledge",
                 "run_cognee_improvement",
                 "build_organization_update_digest",
                 "post_gateway_digest",
@@ -87,16 +94,22 @@ class LearningAgent:
             post_to_chat,
         )
         github_result = await self.github_syncer.run(force=force, dry_run=dry_run)
+        repo_content_result = await self.repo_content_syncer.run(force=force, dry_run=dry_run)
         vault_context = await self._recent_vault_context()
         result = {
             "ok": True,
             "agent": "citadel-learning-agent",
             "sources": {
                 "github": github_result,
+                "repo_content": repo_content_result,
                 "vault": vault_context,
             },
-            "ingested": github_result.get("ingested", False),
-            "improved": github_result.get("improved", False),
+            "ingested": bool(github_result.get("ingested")) or int(
+                repo_content_result.get("files_ingested") or 0
+            )
+            > 0,
+            "improved": bool(github_result.get("improved"))
+            or bool(repo_content_result.get("improved")),
             "dry_run": dry_run,
         }
         digest = await asyncio.to_thread(

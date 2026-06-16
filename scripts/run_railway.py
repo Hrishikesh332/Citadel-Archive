@@ -15,6 +15,7 @@ Modes (via ``CITADEL_RUN_MODE``):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -74,6 +75,26 @@ def _backup_mirror_stage() -> int:
     return run_backup_mirror()
 
 
+def _repo_content_sync_stage() -> int:
+    from kb.repo_content_sync import RepoContentSyncer
+    from kb.service import Citadel
+
+    result = asyncio.run(RepoContentSyncer(Citadel.from_env()).run())
+    if not result.get("ok"):
+        return 1
+    if result.get("enabled") is False:
+        logger.info("Repo content sync skipped: %s", result.get("reason"))
+        return 0
+    logger.info(
+        "Repo content sync finished: repos=%s ingested=%s skipped=%s improved=%s",
+        result.get("repos_scanned"),
+        result.get("files_ingested"),
+        result.get("files_skipped"),
+        result.get("improved"),
+    )
+    return 0
+
+
 def pipeline_stages() -> list[tuple[str, bool, Callable[[], int]]]:
     """(name, enabled, runner) for every pipeline stage, in execution order."""
     return [
@@ -81,6 +102,11 @@ def pipeline_stages() -> list[tuple[str, bool, Callable[[], int]]]:
             "github_sync",
             _bool(os.getenv("CITADEL_PIPELINE_GITHUB_SYNC_ENABLED"), default=True),
             _github_sync_stage,
+        ),
+        (
+            "repo_content_sync",
+            _bool(os.getenv("CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED"), default=True),
+            _repo_content_sync_stage,
         ),
         (
             "skills_refresh",

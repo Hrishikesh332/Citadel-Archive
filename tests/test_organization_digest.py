@@ -11,6 +11,21 @@ from kb.learning_agent import LearningAgent
 from kb.organization_digest import build_organization_digest, has_meaningful_source_changes
 
 
+class FakeRepoContentSyncer:
+    async def status(self) -> dict[str, Any]:
+        return {"ok": True, "source_type": "github_repo_content", "enabled": True}
+
+    async def run(self, *, force: bool = False, dry_run: bool = False) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "enabled": True,
+            "files_ingested": 0,
+            "files_skipped": 0,
+            "improved": False,
+            "dry_run": dry_run,
+        }
+
+
 def _learning_result() -> dict[str, Any]:
     return {
         "ok": True,
@@ -213,7 +228,12 @@ async def test_learning_agent_manual_run_previews_without_posting(monkeypatch: A
         def post_digest(self, text: str, *, message_id: str | None = None) -> dict[str, Any]:
             raise AssertionError("manual preview should not post")
 
-    agent = LearningAgent(FakeCitadel(), github_syncer=FakeSyncer(), google_chat=FakeChat())
+    agent = LearningAgent(
+        FakeCitadel(),
+        github_syncer=FakeSyncer(),
+        repo_content_syncer=FakeRepoContentSyncer(),
+        google_chat=FakeChat(),
+    )
 
     result = await agent.run()
 
@@ -249,7 +269,12 @@ async def test_learning_agent_posts_when_explicitly_requested(monkeypatch: Any) 
             posted.append(text)
             return {"ok": True, "sent": True, "status_category": "success"}
 
-    agent = LearningAgent(FakeCitadel(), github_syncer=FakeSyncer(), google_chat=FakeChat())
+    agent = LearningAgent(
+        FakeCitadel(),
+        github_syncer=FakeSyncer(),
+        repo_content_syncer=FakeRepoContentSyncer(),
+        google_chat=FakeChat(),
+    )
 
     result = await agent.run(post_to_chat=True, include_digest_preview=False)
 
@@ -285,6 +310,7 @@ async def test_learning_agent_posts_to_configured_gateways(monkeypatch: Any) -> 
     agent = LearningAgent(
         FakeCitadel(),
         github_syncer=FakeSyncer(),
+        repo_content_syncer=FakeRepoContentSyncer(),
         gateways={"internal_webhook": FakeGateway()},
     )
 
@@ -332,6 +358,7 @@ async def test_learning_agent_posts_gateways_concurrently(monkeypatch: Any) -> N
     agent = LearningAgent(
         FakeCitadel(),
         github_syncer=FakeSyncer(),
+        repo_content_syncer=FakeRepoContentSyncer(),
         gateways={
             "alpha": BlockingGateway("alpha"),
             "bravo": BlockingGateway("bravo"),

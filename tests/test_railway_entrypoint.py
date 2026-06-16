@@ -114,7 +114,12 @@ def _patch_stages(
         calls.append("backup_mirror")
         return backup_code
 
+    def fake_repo_content() -> int:
+        calls.append("repo_content_sync")
+        return 0
+
     monkeypatch.setattr(run_github_sync, "run", fake_github)
+    monkeypatch.setattr(run_railway, "_repo_content_sync_stage", fake_repo_content)
     monkeypatch.setattr(skills, "refresh_skill_catalog", fake_skills_refresh)
     monkeypatch.setattr(run_self_improve, "run", fake_self_improve)
     monkeypatch.setattr(run_backup_mirror, "run", fake_backup)
@@ -123,6 +128,7 @@ def _patch_stages(
 def _clear_pipeline_env(monkeypatch: Any) -> None:
     for name in (
         "CITADEL_PIPELINE_GITHUB_SYNC_ENABLED",
+        "CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED",
         "CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED",
         "CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED",
         "CITADEL_SELF_IMPROVE_ENABLED",
@@ -137,7 +143,7 @@ def test_pipeline_runs_all_enabled_stages_in_order(monkeypatch: Any) -> None:
     _patch_stages(monkeypatch, calls)
 
     assert run_railway.run("pipeline") == 0
-    assert calls == ["github_sync", "skills_refresh", "self_improve", "backup_mirror"]
+    assert calls == ["github_sync", "repo_content_sync", "skills_refresh", "self_improve", "backup_mirror"]
 
 
 def test_pipeline_self_improve_stage_is_off_by_default(monkeypatch: Any) -> None:
@@ -146,7 +152,7 @@ def test_pipeline_self_improve_stage_is_off_by_default(monkeypatch: Any) -> None
     _patch_stages(monkeypatch, calls)
 
     assert run_railway.run("pipeline") == 0
-    assert calls == ["github_sync", "skills_refresh", "backup_mirror"]
+    assert calls == ["github_sync", "repo_content_sync", "skills_refresh", "backup_mirror"]
 
 
 def test_pipeline_stage_toggles_disable_individual_stages(monkeypatch: Any) -> None:
@@ -157,7 +163,7 @@ def test_pipeline_stage_toggles_disable_individual_stages(monkeypatch: Any) -> N
     _patch_stages(monkeypatch, calls)
 
     assert run_railway.run("pipeline") == 0
-    assert calls == ["github_sync"]
+    assert calls == ["github_sync", "repo_content_sync"]
 
 
 def test_pipeline_continues_past_a_failed_stage(monkeypatch: Any) -> None:
@@ -166,12 +172,13 @@ def test_pipeline_continues_past_a_failed_stage(monkeypatch: Any) -> None:
     _patch_stages(monkeypatch, calls, github_raises=True)
 
     assert run_railway.run("pipeline") == 0
-    assert calls == ["github_sync", "skills_refresh", "backup_mirror"]
+    assert calls == ["github_sync", "repo_content_sync", "skills_refresh", "backup_mirror"]
 
 
 def test_pipeline_exits_nonzero_only_when_all_enabled_stages_fail(monkeypatch: Any) -> None:
     _clear_pipeline_env(monkeypatch)
     monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED", "false")
     calls: list[str] = []
     _patch_stages(monkeypatch, calls, github_raises=True, backup_code=1)
 
@@ -182,6 +189,7 @@ def test_pipeline_exits_nonzero_only_when_all_enabled_stages_fail(monkeypatch: A
 def test_pipeline_mode_aliases_with_everything_disabled(monkeypatch: Any) -> None:
     _clear_pipeline_env(monkeypatch)
     monkeypatch.setenv("CITADEL_PIPELINE_GITHUB_SYNC_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED", "false")
     monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
     monkeypatch.setenv("CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED", "false")
     calls: list[str] = []
