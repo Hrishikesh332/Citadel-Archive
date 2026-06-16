@@ -324,13 +324,24 @@ class AccessStore:
         role: str = "writer",
         issue_token: bool = True,
         token_name: str | None = None,
+        central_dataset: str = CENTRAL_DATASET,
     ) -> SeatCreation:
+        validate_role(role)
+        if role == "admin":
+            # A seat is a private-memory boundary for a licensed human; an admin
+            # token bypasses the dataset allowlist entirely (see
+            # can_bypass_dataset_allowlist) and so dissolves that boundary. Issue
+            # admin tokens through create_token, never as a seat.
+            raise ValueError("Seats cannot be provisioned with the admin role.")
         normalized_slug = validate_seat_slug(slug)
         node_dataset = seat_dataset(normalized_slug)
         if self._find_seat_by_dataset(node_dataset):
             raise ValueError(f"Seat already exists for slug: {normalized_slug}")
         session_id = f"seat-{normalized_slug}"
-        allowed = (node_dataset, CENTRAL_DATASET)
+        # Derive Central from the caller-supplied dataset (resolved from config at
+        # the API layer) so the seat's allowlist can never drift from the value the
+        # write/search router actually targets.
+        allowed = (node_dataset, central_dataset)
         principal = self.create_principal(
             name=name,
             kind="user",

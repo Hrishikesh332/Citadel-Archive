@@ -510,10 +510,33 @@ def can_bypass_dataset_allowlist(identity: AccessIdentity) -> bool:
 def enforce_dataset_allowlist(identity: AccessIdentity, dataset: str) -> None:
     if can_bypass_dataset_allowlist(identity):
         return
+    if dataset in identity.allowed_datasets:
+        return
+    # Seat nodes are private memory: the seat: namespace is default-deny even for
+    # callers that carry no allowlist at all. Without this, any legacy or non-seat
+    # token (whose allowed_datasets is empty) could read or write another seat's
+    # node by naming it explicitly. Non-seat datasets stay open for unscoped tokens
+    # to preserve backward compatibility.
+    if is_seat_dataset(dataset):
+        raise HTTPException(status_code=403, detail=f"Dataset not allowed: {dataset}.")
     if not identity.allowed_datasets:
         return
-    if dataset not in identity.allowed_datasets:
-        raise HTTPException(status_code=403, detail=f"Dataset not allowed: {dataset}.")
+    raise HTTPException(status_code=403, detail=f"Dataset not allowed: {dataset}.")
+
+
+def scope_override_active(
+    identity: AccessIdentity,
+    datasets: list[str] | tuple[str, ...],
+) -> bool:
+    """True when a bypassing caller that carries an explicit allowlist reaches a
+    dataset outside it — the auditable "admin overrode scope" case. Callers with
+    no allowlist (env/bootstrap) were never scope-bound, so they are not flagged.
+    """
+    if not identity.allowed_datasets:
+        return False
+    if not can_bypass_dataset_allowlist(identity):
+        return False
+    return any(dataset not in identity.allowed_datasets for dataset in datasets)
 
 
 ORG_BOUND_TAGS = frozenset(
@@ -591,6 +614,24 @@ def resolve_write_targets(
 ) -> list[WriteTarget]:
     if requested:
         dataset = requested
+        # Central is curated: a seat-holder cannot drop raw content straight into
+        # it. Writes to Central from a seat must carry an org tag (which routes
+        # through promotion/dual-write) or go through /api/contribute. Admin/env
+        # callers bypass this, and non-seat service accounts keep their direct
+        # Central write path.
+        if (
+            dataset == central_dataset(config)
+            and is_seat_dataset(identity.default_dataset)
+            and not is_org_bound(tags)
+            and not can_bypass_dataset_allowlist(identity)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Direct writes to Central require an org tag "
+                    "(org-ready / vault-contribution) or /api/contribute."
+                ),
+            )
         enforce_dataset_allowlist(identity, dataset)
         tier: IngestTier = "light" if is_seat_dataset(dataset) and not is_org_bound(tags) else "full"
         return [WriteTarget(dataset, tier)]
@@ -655,8 +696,11 @@ async def search_across_datasets(
     session_id: str | None,
     top_k: int,
 ) -> list[tuple[str, Any]]:
-    merged: list[tuple[str, Any]] = []
-    seen: set[str] = set()
+    # Query every dataset before merging so a result-rich primary node can never
+    # short-circuit (and thereby silently drop) Central. The primary still wins
+    # dedup and takes the bulk of the slots; a reserved slice keeps room for the
+    # secondary datasets when more than one is in scope.
+    per_dataset: list[tuple[str, list[Any]]] = []
     for dataset in datasets:
         results = await citadel.search(
             query,
@@ -664,14 +708,32 @@ async def search_across_datasets(
             session_id=session_id,
             top_k=top_k,
         )
+        per_dataset.append((dataset, list(results)))
+
+    merged: list[tuple[str, Any]] = []
+    seen: set[str] = set()
+
+    def take(dataset: str, results: list[Any], budget: int) -> None:
         for result in results:
+            if budget <= 0 or len(merged) >= top_k:
+                return
             key = search_result_dedup_key(result)
             if key in seen:
                 continue
             seen.add(key)
             merged.append((dataset, result))
-            if len(merged) >= top_k:
-                return merged
+            budget -= 1
+
+    if not per_dataset:
+        return merged
+
+    reserve = max(1, top_k // 5) if len(per_dataset) > 1 else 0
+    primary_dataset, primary_results = per_dataset[0]
+    take(primary_dataset, primary_results, top_k - reserve)
+    for dataset, results in per_dataset[1:]:
+        take(dataset, results, top_k - len(merged))
+    # Backfill any slots the secondaries left unused from the primary node.
+    take(primary_dataset, primary_results, top_k - len(merged))
     return merged
 
 
@@ -1161,6 +1223,7 @@ async def create_access_seat(body: CreateSeatBody, request: Request) -> dict[str
             role=body.role,
             issue_token=body.issue_token,
             token_name=body.token_name,
+            central_dataset=central_dataset(get_citadel().config),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -2060,6 +2123,9 @@ async def ingest(body: IngestBody, request: Request) -> Any:
             "data_bytes": len(body.data.encode("utf-8")),
             "tag_count": len(body.tags),
             "write_targets": [target.dataset for target in write_targets],
+            "scope_override": scope_override_active(
+                actor, [target.dataset for target in write_targets]
+            ),
         },
     )
     return jsonable_encoder(result)
@@ -2158,6 +2224,9 @@ async def contribute(body: ContributeBody, request: Request) -> Any:
             "accepted": accepted,
             "chunks": outcome.accepted_chunks,
             "conflict": bool(outcome.conflict),
+            "scope_override": scope_override_active(
+                actor, [target.dataset for target in write_targets]
+            ),
         },
     )
     return jsonable_encoder(
@@ -2348,6 +2417,7 @@ async def search(body: SearchBody, request: Request) -> Any:
             "result_count": len(merged),
             "top_k": body.top_k,
             "datasets": search_datasets,
+            "scope_override": scope_override_active(actor, search_datasets),
         },
     )
     normalized = [
