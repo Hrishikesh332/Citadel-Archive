@@ -1762,3 +1762,135 @@ def test_promotion_tag_dual_writes_node_and_central(tmp_path: Any) -> None:
     assert len(tracking.ingest_calls) == 2
     assert tracking.ingest_calls[0]["dataset"] == "seat:frank"
     assert tracking.ingest_calls[1]["dataset"] == "masumi-network"
+
+
+def test_seat_token_cannot_reach_another_seat_node(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    admin.post("/api/access/seats", json={"name": "Grace", "slug": "grace"})
+    token = admin.post("/api/access/seats", json={"name": "Heidi", "slug": "heidi"}).json()["token"]
+    app.state.citadel = TrackingCitadel()
+    app.state.mesh = MeshState()
+    api_client = TestClient(app, base_url="https://testserver")
+
+    read = api_client.post(
+        "/search",
+        json={"query": "secrets", "dataset": "seat:grace"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    write = api_client.post(
+        "/ingest",
+        json={"data": "cross-seat write", "dataset": "seat:grace"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert read.status_code == 403
+    assert read.json()["detail"] == "Dataset not allowed: seat:grace."
+    assert write.status_code == 403
+    assert write.json()["detail"] == "Dataset not allowed: seat:grace."
+    assert app.state.citadel.ingest_calls == []
+
+
+def test_unscoped_token_cannot_reach_a_seat_node(tmp_path: Any) -> None:
+    # A writer token with no allowlist stays open for ordinary datasets but must
+    # never be able to name a private seat node and reach it.
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    admin.post("/api/access/seats", json={"name": "Ivan", "slug": "ivan"})
+    token = admin.post(
+        "/api/access/tokens",
+        json={"name": "open-writer", "role": "writer", "kind": "service_account"},
+    ).json()["token"]
+    app.state.citadel = TrackingCitadel()
+    app.state.mesh = MeshState()
+    api_client = TestClient(app, base_url="https://testserver")
+
+    seat_write = api_client.post(
+        "/ingest",
+        json={"data": "poke", "dataset": "seat:ivan"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    ordinary_write = api_client.post(
+        "/ingest",
+        json={"data": "fine", "dataset": "team-notes"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert seat_write.status_code == 403
+    assert seat_write.json()["detail"] == "Dataset not allowed: seat:ivan."
+    assert ordinary_write.status_code == 200
+    assert ordinary_write.json()["dataset"] == "team-notes"
+
+
+def test_seat_direct_central_write_requires_org_tag(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    token = admin.post("/api/access/seats", json={"name": "Karl", "slug": "karl"}).json()["token"]
+    tracking = TrackingCitadel()
+    app.state.citadel = tracking
+    app.state.mesh = MeshState()
+    api_client = TestClient(app, base_url="https://testserver")
+
+    untagged = api_client.post(
+        "/ingest",
+        json={"data": "raw drop", "dataset": "masumi-network"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    tagged = api_client.post(
+        "/ingest",
+        json={"data": "curated", "dataset": "masumi-network", "tags": ["org-ready"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert untagged.status_code == 403
+    assert "org tag" in untagged.json()["detail"]
+    assert tagged.status_code == 200
+    assert tagged.json()["dataset"] == "masumi-network"
+    # Only the tagged write reached Cognee; the untagged one never ingested.
+    assert [call["dataset"] for call in tracking.ingest_calls] == ["masumi-network"]
+
+
+def test_create_seat_api_rejects_admin_role(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    client = authed_client()
+
+    response = client.post(
+        "/api/access/seats",
+        json={"name": "Judy", "slug": "judy", "role": "admin"},
+    )
+
+    assert response.status_code == 422
+    assert "admin role" in response.json()["detail"]
+
+
+def test_admin_scope_override_is_audited(tmp_path: Any) -> None:
+    # An admin-role token that carries its own allowlist but reaches outside it
+    # bypasses enforcement by design; the bypass must be flagged in the audit log.
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    token = admin.post(
+        "/api/access/tokens",
+        json={
+            "name": "scoped-admin",
+            "role": "admin",
+            "kind": "service_account",
+            "allowed_datasets": ["personal"],
+        },
+    ).json()["token"]
+    app.state.citadel = MultiSearchCitadel()
+    api_client = TestClient(app, base_url="https://testserver")
+
+    search = api_client.post(
+        "/search",
+        json={"query": "anything", "dataset": "masumi-network"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "x-citadel-mcp-tool": "citadel_search",
+        },
+    )
+
+    assert search.status_code == 200
+    events = app.state.access_store.snapshot()["audit_events"]
+    search_events = [event for event in events if event["detail"].get("operation") == "search"]
+    assert search_events
+    assert search_events[-1]["detail"]["scope_override"] is True

@@ -303,6 +303,25 @@ def test_create_seat_rejects_duplicate_slug(tmp_path: Path) -> None:
         access_store.create_seat(name="Alice Two", slug="alice")
 
 
+def test_create_seat_rejects_admin_role(tmp_path: Path) -> None:
+    access_store = store(tmp_path)
+
+    with pytest.raises(ValueError, match="admin role"):
+        access_store.create_seat(name="Root", slug="root", role="admin")
+
+
+def test_create_seat_uses_supplied_central_dataset(tmp_path: Path) -> None:
+    access_store = store(tmp_path)
+    created = access_store.create_seat(
+        name="Mallory",
+        slug="mallory",
+        central_dataset="org-vault",
+    )
+
+    assert created.api_token is not None
+    assert created.api_token.allowed_datasets == ("seat:mallory", "org-vault")
+
+
 def test_validate_seat_slug_rejects_invalid_values() -> None:
     from kb.access import validate_seat_slug
 
