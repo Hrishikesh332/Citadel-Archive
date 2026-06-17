@@ -36,9 +36,29 @@ _Avoid_: decorative graph, chat history, raw sync map
 The governed transformation of **Source Material** into **Structured Knowledge**.
 _Avoid_: self-learning, magic sync, auto-truth
 
+**Tiered Ingestion**:
+Org-bound syncs receive full processing (security review, enrichment, and structuring); raw seat-**Node** agent memory receives lighter indexing only.
+_Avoid_: same pipeline for all content, skip processing, full enrichment everywhere
+
 **Vault Member**:
 A human participant who has permission to access an **Organization Vault**.
 _Avoid_: user, teammate, account
+
+**Seat**:
+A licensed team member slot; equals one **Principal** (one human, one seat). Created by admin before **Tokens** are issued.
+_Avoid_: user account, shared login, license bundle
+
+**Node**:
+A seat's private mini knowledge base; logically isolated storage for that seat's agent memory. **Nodes** do not collide; seats cannot read each other's **Nodes**.
+_Avoid_: organization vault, central, shared memory
+
+**Central**:
+The organization-wide shared knowledge base. Distinct from any seat **Node**.
+_Avoid_: seat node, personal vault, private agent memory
+
+**Token**:
+The credential a **Seat** uses to access their **Node** (and **Central** per read rules). Not the storage boundary — the **Node** is.
+_Avoid_: node, storage scope, MCP key
 
 **Agent Identity**:
 A non-human actor that uses agent messaging for communication and may access an **Organization Vault**.
@@ -63,6 +83,14 @@ _Avoid_: background magic, unrestricted automation
 **Vault Contribution**:
 Structured or source-linked knowledge added to an **Organization Vault** by an actor with write permission.
 _Avoid_: chat message, random update, raw agent conversation
+
+**Promotion**:
+A curated copy of content from a seat **Node** into **Central**. Dual-write: the original stays in the **Node**; the copy goes to **Central**.
+_Avoid_: move, delete original, automatic merge
+
+**Automatic + Curated Sync**:
+Default agent memory stays in the seat **Node**; org-bound content (pipelines, tagged contributions) also lands in **Central** per curation rules.
+_Avoid_: full vault mirror, seat-to-seat sync, chat log sync
 
 **Repository Daily Update**:
 A source-linked summary of meaningful changes in one repository over a day.
@@ -105,6 +133,8 @@ _Avoid_: merge, overwrite, silent correction
 - An **Organization Update Digest** can be delivered to an external communication surface without becoming **Source Material** itself.
 - A **Security Finding** is separate from an **Organization Update Digest** and should never expose secret values in external communication surfaces.
 - A **Knowledge Conflict** should be shown when source-linked knowledge disagrees.
+- A **Seat** is one human **Principal** that may hold several **Tokens**; **Agent Identities** acting for that human are separate principals that may be granted access to the seat's **Node**.
+- A caller is treated as holding a **Node** when a seat **Node** is in its access scope — this is what subjects it to **Central** curation rules, regardless of whether it is the human seat-holder or one of their agents.
 
 ## Example Dialogue
 
@@ -169,3 +199,4 @@ _Avoid_: merge, overwrite, silent correction
 - "org update" was broader than repository changes; resolved: an **Organization Update Digest** summarizes meaningful source-linked changes, features, decisions, and ongoing work from the **Organization Vault**.
 - "secret reporting" was initially mixed into the update digest; resolved: potential secrets and high-risk issues are **Security Findings**, redacted and handled separately from daily digests.
 - "conflicting knowledge" was unresolved; resolved: prefer newer source-linked repository truth for code behavior, while marking **Knowledge Conflicts** visibly.
+- "is a caller a Seat?" was conflated with principal identity; resolved: for **Central** curation the test is whether a seat **Node** is in the caller's access scope, which covers both the human's **Tokens** and their **Agent Identities** — agents are not the human **Principal** and so carry no seat marker of their own.

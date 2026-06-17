@@ -1,6 +1,94 @@
 # Citadel Progress
 
-Last updated: 2026-06-11.
+Last updated: 2026-06-17.
+
+## 2026-06-17
+
+- Reviewed the seat/node/central Phase 1+2 work (commit `2cd3ac9`,
+  `feat(access): add seat provisioning and multi-dataset search`) against
+  ADR-0003 and hardened six isolation/correctness gaps. Changes are local on
+  `main`, verified but not yet committed/pushed.
+- Closed the seat-isolation gaps in `kb/server.py` and `kb/access.py`:
+  - **Default-deny `seat:` namespace.** `enforce_dataset_allowlist` no longer
+    lets a token with an empty `allowed_datasets` reach a seat node by naming it.
+    Previously any legacy/non-seat token could read or write another seat's
+    `seat:{slug}` node; now only the owning seat (plus audited admin/env bypass)
+    can. Ordinary (non-seat) datasets stay open for unscoped tokens for backward
+    compatibility.
+  - **Seats cannot be admin.** `create_seat(role="admin")` is rejected and the
+    Admin option is removed from the seat form, because an admin token bypasses
+    the allowlist and would dissolve the node boundary. Admin tokens are issued
+    directly via token creation.
+  - **Central allow-entry derived from config.** `create_seat` now takes the
+    resolved `central_dataset(config)` instead of hardcoding `masumi-network`, so
+    the seat allowlist can no longer drift from the dataset the router targets
+    when `CITADEL_GITHUB_SYNC_DATASET` is overridden.
+  - **Central is curated.** A seat-holder's explicit write to the Central dataset
+    must carry an org tag (`org-ready` / `vault-contribution`) or go through
+    `/api/contribute`; an untagged direct write to Central is rejected (403).
+    Admin/env callers and non-seat service accounts keep their direct path.
+- Hardened multi-dataset search merge: `search_across_datasets` now queries every
+  allowed dataset before ranking, with a reserved slice for secondaries, so a
+  result-rich node can no longer short-circuit and silently drop Central. Dedup
+  still favors the node copy.
+- Added scope-override auditing: when a bypassing caller that carries its own
+  allowlist reaches outside it, search/ingest/contribute audit detail records
+  `scope_override: true`.
+- Documented the model changes in `docs/adr/0003-seat-node-central-private-memory.md`
+  (three new Consequence bullets) and `docs/agent-access-model.md` (Read/Write
+  Scope, Admin Override, Token Memory Scope, and Security Rules).
+- Verified with `uv run pytest -q`: 301 passed (294 prior + 7 new tests covering
+  cross-seat denial, unscoped-token denial of a seat node, admin-seat rejection,
+  the curated-Central gate, scope-override auditing, and the configurable Central
+  allow-entry).
+- Addressed the PR #1 (Cursor Bugbot) review — three further seat-isolation gaps,
+  shipped as `84fdde6` (fix), `fb5dd74` (test), `d88ec79` (docs):
+  - **Seat session leaked to Central search.** `search_across_datasets` applied a
+    single `session_id` to every dataset, so a seat's `default_session` scoped the
+    Central leg and hid org-wide hits. Sessions are now resolved per dataset
+    (`resolve_search_sessions`): the implicit `default_session` scopes only the
+    caller's own node; shared datasets are searched session-wide. An explicit
+    `session_id` still applies to whatever was searched.
+  - **Curated-Central gate bypassable.** The gate keyed off `default_dataset`
+    only, so a token defaulting to Central skipped the org-tag requirement and the
+    default-target branch had no gate. Seat membership is now judged by storage
+    scope (`is_seat_identity`: a `seat:` node in `default_dataset` or
+    `allowed_datasets`) and the gate (`guard_curated_central`) runs on both
+    explicit and default targets. Scope-based detection deliberately covers the
+    agents scoped into a seat node — they are `service_account` principals with no
+    `seat_slug`, so a principal-identity check would under-gate them.
+  - **Obsidian push ignored tag routing.** `resolve_write_dataset` passed empty
+    tags, trapping org-bound notes in the node. The push loop now routes per
+    document with the real tags via `resolve_write_targets` +
+    `execute_learning_writes`, matching `/ingest`.
+- Recorded the resolved design decisions in ADR-0003 and `CONTEXT.md`: seat
+  detection by storage scope (covering a human's tokens and their agents), the
+  default-target gate, and per-dataset session isolation.
+- Verified with `uv run pytest tests/test_server.py tests/test_obsidian_sync.py -q`:
+  70 passed (3 new regression tests). Pre-existing unrelated failure
+  `test_github_sync_returns_open_and_merged_pull_requests` (date-window assertion)
+  is not from this work.
+- Ran a full adversarial (Bugbot-style) audit of the PR and fixed the gaps it
+  surfaced:
+  - **Cross-seat session read (the notable one).** Nothing validated a
+    caller-supplied `session_id`, and session-scoped recall ignores the dataset
+    allowlist, so a seat could name another seat's guessable `seat-{slug}` session
+    and read its private node. Added `assert_requested_session_allowed`: a
+    non-bypass caller may name only its own `default_session` (else 403);
+    admin/env keep full reach. Enforced in both `resolve_session_id` (writes) and
+    `resolve_search_sessions` (search), and an explicit own session now scopes the
+    node only — Central stays session-wide.
+  - **Session-scoping edge.** `resolve_search_sessions` no longer drops a session
+    when the caller has no node of its own — a single-dataset search still scopes
+    to that one dataset.
+  - **Obsidian audit clarity.** The push audit now records `written_datasets`
+    (where tag routing actually landed content) alongside the vault's home
+    binding.
+  - Accepted as intentional: scope-based seat detection can gate a service
+    account granted seat-node read (Option A trade-off), and Obsidian-promoted
+    Central writes keep conflict detection off (Obsidian's revision model).
+- Verified with `uv run pytest -q`: 304 passed (2 new session tests), only the
+  pre-existing unrelated github-sync date-window test failing.
 
 ## 2026-06-11
 
