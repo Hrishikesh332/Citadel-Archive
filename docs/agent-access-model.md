@@ -41,6 +41,12 @@ before issuing tokens. Storage isolation is at the **Node**, not the token.
   `allowed_datasets`. An unscoped or legacy token (empty allowlist) keeps
   whole-vault access to ordinary datasets but cannot name another seat's node.
   Env/bootstrap and admin/`access:manage` callers still bypass.
+- **Session is a second isolation axis.** Session-scoped recall ignores the
+  dataset allowlist, and seat sessions are `seat-{slug}` (guessable), so a
+  non-bypass caller may name only its **own** `default_session`; any other
+  session is rejected (403) before recall, preventing a cross-node read. A
+  caller's session scopes only its own node — Central is always searched
+  session-wide so a seat session cannot hide org-wide hits.
 
 Phase 2 adds multi-dataset search that queries allowed datasets in one call;
 Phase 1 resolves a single dataset per request with token defaults. The merge
@@ -57,12 +63,15 @@ short-circuit and silently drop Central — and dedup favors the node copy.
 | Promotion | Dual-write (node + Central) | Curated; original stays in node |
 
 Tags (Phase 2) separate automatic (node) and curated (Central) lanes.
-**Central is curated:** a seat-holder cannot write raw content straight into it.
-A write that explicitly targets Central must carry an org tag (`org-ready` /
+**Central is curated:** a caller holding a seat node cannot write raw content
+straight into it. A write targeting Central — named explicitly *or* reached as
+the caller's default target — must carry an org tag (`org-ready` /
 `vault-contribution`, which routes through promotion/dual-write) or go through
-`/api/contribute`; an untagged direct write to Central from a seat is rejected
-(403). Admin/env callers and non-seat service accounts keep their direct write
-path.
+`/api/contribute`; an untagged direct write is rejected (403). "Holds a seat
+node" is judged by storage scope (a `seat:` node in `default_dataset` or
+`allowed_datasets`), so the gate covers both the human's tokens and the agents
+scoped into their node. Admin/env callers and non-seat service accounts (no seat
+node in scope) keep their direct write path.
 
 ### Admin Override
 
@@ -150,7 +159,9 @@ Each token may carry:
 
 - `default_dataset` — default for search/ingest when caller omits `dataset`
   (typically `seat:{slug}` for members, `masumi-network` for org-wide agents).
-- `default_session` — default Cognee session for the token.
+- `default_session` — default Cognee session for the token. A non-bypass caller
+  may only ever use its own session: an explicit `session_id` that differs is
+  rejected (403), since session-scoped recall bypasses the dataset allowlist.
 - `allowed_datasets` — optional allowlist; empty means whole-vault access to
   ordinary datasets for the role **but never another seat's node** (the `seat:`
   namespace is default-deny); non-empty restricts search/ingest/contribute to
@@ -208,6 +219,7 @@ Future scopes:
 - Sensitive MCP tools must require client approval: sync, improve, delete, reindex, invite, token creation, seat provisioning.
 - Prefer OAuth 2.1 + Protected Resource Metadata for hosted remote MCP. Local stdio MCP can use env-provided credentials.
 - Never expose one seat's node content to another token — seat, service account, or legacy — regardless of allowlist state. Only the owning seat (and audited admin/env bypass) reaches a node.
+- A non-bypass caller may name only its own `default_session`; reject any other `session_id` (403). Session-scoped recall ignores the dataset allowlist, so an unguarded session id is a path around node isolation.
 
 ## Dashboard Model
 
