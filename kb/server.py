@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -606,6 +607,41 @@ def resolve_search_dataset(
     return resolve_search_datasets(identity, requested, config)[0]
 
 
+def is_seat_identity(identity: AccessIdentity) -> bool:
+    # A seat is a private-memory boundary, identified by a seat: node either as
+    # the default target or anywhere in the allowlist. Keying only off
+    # default_dataset would let a seat token whose default is Central slip the
+    # curation gate, so the allowlist is the authoritative signal.
+    if is_seat_dataset(identity.default_dataset):
+        return True
+    return any(is_seat_dataset(dataset) for dataset in identity.allowed_datasets)
+
+
+def guard_curated_central(
+    identity: AccessIdentity,
+    dataset: str,
+    tags: list[str] | tuple[str, ...],
+    config: CitadelConfig,
+) -> None:
+    # Central is curated: a seat-holder cannot drop raw content straight into it.
+    # Writes to Central from a seat must carry an org tag (which routes through
+    # promotion/dual-write) or go through /api/contribute. Admin/env callers
+    # bypass this, and non-seat service accounts keep their direct Central path.
+    if (
+        dataset == central_dataset(config)
+        and is_seat_identity(identity)
+        and not is_org_bound(tags)
+        and not can_bypass_dataset_allowlist(identity)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Direct writes to Central require an org tag "
+                "(org-ready / vault-contribution) or /api/contribute."
+            ),
+        )
+
+
 def resolve_write_targets(
     identity: AccessIdentity,
     requested: str | None,
@@ -614,24 +650,7 @@ def resolve_write_targets(
 ) -> list[WriteTarget]:
     if requested:
         dataset = requested
-        # Central is curated: a seat-holder cannot drop raw content straight into
-        # it. Writes to Central from a seat must carry an org tag (which routes
-        # through promotion/dual-write) or go through /api/contribute. Admin/env
-        # callers bypass this, and non-seat service accounts keep their direct
-        # Central write path.
-        if (
-            dataset == central_dataset(config)
-            and is_seat_dataset(identity.default_dataset)
-            and not is_org_bound(tags)
-            and not can_bypass_dataset_allowlist(identity)
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "Direct writes to Central require an org tag "
-                    "(org-ready / vault-contribution) or /api/contribute."
-                ),
-            )
+        guard_curated_central(identity, dataset, tags, config)
         enforce_dataset_allowlist(identity, dataset)
         tier: IngestTier = "light" if is_seat_dataset(dataset) and not is_org_bound(tags) else "full"
         return [WriteTarget(dataset, tier)]
@@ -654,6 +673,7 @@ def resolve_write_targets(
         return [WriteTarget(central, "full")]
 
     dataset = identity.default_dataset or config.default_dataset
+    guard_curated_central(identity, dataset, normalized_tags, config)
     enforce_dataset_allowlist(identity, dataset)
     tier = "light" if is_seat_dataset(dataset) else "full"
     return [WriteTarget(dataset, tier)]
@@ -693,19 +713,21 @@ async def search_across_datasets(
     *,
     query: str,
     datasets: list[str],
-    session_id: str | None,
+    sessions: Mapping[str, str | None],
     top_k: int,
 ) -> list[tuple[str, Any]]:
     # Query every dataset before merging so a result-rich primary node can never
     # short-circuit (and thereby silently drop) Central. The primary still wins
     # dedup and takes the bulk of the slots; a reserved slice keeps room for the
-    # secondary datasets when more than one is in scope.
+    # secondary datasets when more than one is in scope. Sessions are resolved per
+    # dataset: a seat's private session must not scope shared datasets like Central
+    # (see resolve_search_sessions), or it would hide org-wide hits.
     per_dataset: list[tuple[str, list[Any]]] = []
     for dataset in datasets:
         results = await citadel.search(
             query,
             dataset=dataset,
-            session_id=session_id,
+            session_id=sessions.get(dataset),
             top_k=top_k,
         )
         per_dataset.append((dataset, list(results)))
@@ -771,6 +793,23 @@ async def execute_learning_writes(
 
 def resolve_session_id(identity: AccessIdentity, requested: str | None) -> str | None:
     return requested or identity.default_session
+
+
+def resolve_search_sessions(
+    identity: AccessIdentity,
+    requested: str | None,
+    datasets: list[str],
+) -> dict[str, str | None]:
+    # An explicit session request is the caller's deliberate choice and applies to
+    # whatever was searched. The implicit default_session, by contrast, is private
+    # node memory: scope it to the caller's own node only so a seat session can
+    # never filter (and thereby hide org-wide hits in) a shared dataset like Central.
+    if requested:
+        return {dataset: requested for dataset in datasets}
+    return {
+        dataset: (identity.default_session if dataset == identity.default_dataset else None)
+        for dataset in datasets
+    }
 
 
 def resolved_memory_scope(
@@ -1735,15 +1774,20 @@ async def push_obsidian_sync(body: ObsidianPushBody, request: Request) -> Any:
         if not source_document:
             continue
         document_tags = [*body.tags, *source_document.tags, "obsidian", "obsidian_vault"]
-        document_dataset = resolve_write_dataset(
+        # Route with the document's real tags so org-bound notes reach Central
+        # (and dual-write promotions fire) exactly like /ingest, and the curated
+        # Central gate sees the tags it needs to allow a tagged explicit write.
+        document_targets = resolve_write_targets(
             actor,
             source_document.dataset or body.dataset,
+            document_tags,
             citadel.config,
         )
         try:
-            outcome = await learning.learn(
-                source_document.content,
-                dataset=document_dataset,
+            outcome, _ = await execute_learning_writes(
+                learning,
+                data=source_document.content,
+                targets=document_targets,
                 tags=document_tags,
                 session_id=push_session_id,
                 operation="obsidian_sync",
@@ -2294,13 +2338,13 @@ async def knowledge(
     citadel = get_citadel()
     mesh_state = get_mesh()
     search_datasets = resolve_search_datasets(identity, dataset, citadel.config)
-    session_id = resolve_session_id(identity, None)
+    search_sessions = resolve_search_sessions(identity, None, search_datasets)
     try:
         merged = await search_across_datasets(
             citadel,
             query=query,
             datasets=search_datasets,
-            session_id=session_id,
+            sessions=search_sessions,
             top_k=limit,
         )
     except Exception as exc:  # pragma: no cover - depends on runtime Cognee configuration.
@@ -2373,13 +2417,13 @@ async def search(body: SearchBody, request: Request) -> Any:
     citadel = get_citadel()
     mesh_state = get_mesh()
     search_datasets = resolve_search_datasets(actor, body.dataset, citadel.config)
-    session_id = resolve_session_id(actor, body.session_id)
+    search_sessions = resolve_search_sessions(actor, body.session_id, search_datasets)
     try:
         merged = await search_across_datasets(
             citadel,
             query=body.query,
             datasets=search_datasets,
-            session_id=session_id,
+            sessions=search_sessions,
             top_k=body.top_k,
         )
     except Exception as exc:  # pragma: no cover - depends on runtime Cognee configuration.
