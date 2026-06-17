@@ -1686,6 +1686,58 @@ def test_seat_token_searches_node_and_central(tmp_path: Any) -> None:
     assert knowledge.json()["datasets"] == ["seat:bob", "masumi-network"]
 
 
+def test_seat_cannot_recall_another_seats_session(tmp_path: Any) -> None:
+    # Session-scoped recall ignores the dataset allowlist, and seat sessions are
+    # derived from a guessable slug, so a seat naming another seat's session would
+    # read its private node. A non-bypass caller may only name its own session.
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    admin.post("/api/access/seats", json={"name": "Alice", "slug": "alice"})
+    token = admin.post("/api/access/seats", json={"name": "Bob", "slug": "bob"}).json()["token"]
+    app.state.citadel = MultiSearchCitadel()
+    api_client = TestClient(app, base_url="https://testserver")
+
+    foreign = api_client.post(
+        "/search",
+        json={"query": "secrets", "session_id": "seat-alice"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    own = api_client.post(
+        "/search",
+        json={"query": "notes", "session_id": "seat-bob"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert foreign.status_code == 403
+    assert foreign.json()["detail"] == "Session not allowed."
+    assert own.status_code == 200
+    # Even an explicit own session scopes the node only; Central stays wide.
+    assert app.state.citadel.session_calls == {
+        "seat:bob": "seat-bob",
+        "masumi-network": None,
+    }
+
+
+def test_admin_may_target_any_session(tmp_path: Any) -> None:
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    admin = authed_client()
+    token = admin.post(
+        "/api/access/tokens",
+        json={"name": "ops", "role": "admin", "kind": "service_account"},
+    ).json()["token"]
+    app.state.citadel = MultiSearchCitadel()
+    api_client = TestClient(app, base_url="https://testserver")
+
+    search = api_client.post(
+        "/search",
+        json={"query": "anything", "dataset": "masumi-network", "session_id": "masumi-github-daily"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert search.status_code == 200
+    assert app.state.citadel.session_calls == {"masumi-network": "masumi-github-daily"}
+
+
 def test_seat_search_deduplicates_preferring_node(tmp_path: Any) -> None:
     class DuplicateCitadel(FakeCitadel):
         async def search(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
