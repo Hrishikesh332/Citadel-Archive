@@ -41,6 +41,33 @@ Last updated: 2026-06-17.
   cross-seat denial, unscoped-token denial of a seat node, admin-seat rejection,
   the curated-Central gate, scope-override auditing, and the configurable Central
   allow-entry).
+- Addressed the PR #1 (Cursor Bugbot) review — three further seat-isolation gaps,
+  shipped as `84fdde6` (fix), `fb5dd74` (test), `d88ec79` (docs):
+  - **Seat session leaked to Central search.** `search_across_datasets` applied a
+    single `session_id` to every dataset, so a seat's `default_session` scoped the
+    Central leg and hid org-wide hits. Sessions are now resolved per dataset
+    (`resolve_search_sessions`): the implicit `default_session` scopes only the
+    caller's own node; shared datasets are searched session-wide. An explicit
+    `session_id` still applies to whatever was searched.
+  - **Curated-Central gate bypassable.** The gate keyed off `default_dataset`
+    only, so a token defaulting to Central skipped the org-tag requirement and the
+    default-target branch had no gate. Seat membership is now judged by storage
+    scope (`is_seat_identity`: a `seat:` node in `default_dataset` or
+    `allowed_datasets`) and the gate (`guard_curated_central`) runs on both
+    explicit and default targets. Scope-based detection deliberately covers the
+    agents scoped into a seat node — they are `service_account` principals with no
+    `seat_slug`, so a principal-identity check would under-gate them.
+  - **Obsidian push ignored tag routing.** `resolve_write_dataset` passed empty
+    tags, trapping org-bound notes in the node. The push loop now routes per
+    document with the real tags via `resolve_write_targets` +
+    `execute_learning_writes`, matching `/ingest`.
+- Recorded the resolved design decisions in ADR-0003 and `CONTEXT.md`: seat
+  detection by storage scope (covering a human's tokens and their agents), the
+  default-target gate, and per-dataset session isolation.
+- Verified with `uv run pytest tests/test_server.py tests/test_obsidian_sync.py -q`:
+  70 passed (3 new regression tests). Pre-existing unrelated failure
+  `test_github_sync_returns_open_and_merged_pull_requests` (date-window assertion)
+  is not from this work.
 
 ## 2026-06-11
 
