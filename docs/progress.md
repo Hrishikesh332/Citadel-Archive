@@ -68,6 +68,27 @@ Last updated: 2026-06-17.
   70 passed (3 new regression tests). Pre-existing unrelated failure
   `test_github_sync_returns_open_and_merged_pull_requests` (date-window assertion)
   is not from this work.
+- Ran a full adversarial (Bugbot-style) audit of the PR and fixed the gaps it
+  surfaced:
+  - **Cross-seat session read (the notable one).** Nothing validated a
+    caller-supplied `session_id`, and session-scoped recall ignores the dataset
+    allowlist, so a seat could name another seat's guessable `seat-{slug}` session
+    and read its private node. Added `assert_requested_session_allowed`: a
+    non-bypass caller may name only its own `default_session` (else 403);
+    admin/env keep full reach. Enforced in both `resolve_session_id` (writes) and
+    `resolve_search_sessions` (search), and an explicit own session now scopes the
+    node only — Central stays session-wide.
+  - **Session-scoping edge.** `resolve_search_sessions` no longer drops a session
+    when the caller has no node of its own — a single-dataset search still scopes
+    to that one dataset.
+  - **Obsidian audit clarity.** The push audit now records `written_datasets`
+    (where tag routing actually landed content) alongside the vault's home
+    binding.
+  - Accepted as intentional: scope-based seat detection can gate a service
+    account granted seat-node read (Option A trade-off), and Obsidian-promoted
+    Central writes keep conflict detection off (Obsidian's revision model).
+- Verified with `uv run pytest -q`: 304 passed (2 new session tests), only the
+  pre-existing unrelated github-sync date-window test failing.
 
 ## 2026-06-11
 
