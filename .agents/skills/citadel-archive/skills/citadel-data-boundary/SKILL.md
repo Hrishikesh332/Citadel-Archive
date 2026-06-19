@@ -26,7 +26,7 @@ public repo, chat logs, or issues.
 
 ## Safe to share publicly
 
-- Skill URLs: `https://citadel-archive-production.up.railway.app/skills/connect`
+- Skill URLs: `https://citadel-archive.onrender.com/skills/connect`
 - Hosted Citadel URL (not the token)
 - Architecture and API documentation from Citadel-Archive
 
@@ -40,8 +40,8 @@ public repo, chat logs, or issues.
 
 | Skill | URL |
 |---|---|
-| MCP setup | `https://citadel-archive-production.up.railway.app/skills/connect` |
-| Vault usage | `https://citadel-archive-production.up.railway.app/skills/vault` |
-| This boundary | `https://citadel-archive-production.up.railway.app/skills/boundary` |
+| MCP setup | `https://citadel-archive.onrender.com/skills/connect` |
+| Vault usage | `https://citadel-archive.onrender.com/skills/vault` |
+| This boundary | `https://citadel-archive.onrender.com/skills/boundary` |
 
 Full policy: `docs/public-and-private.md` in Citadel-Archive.

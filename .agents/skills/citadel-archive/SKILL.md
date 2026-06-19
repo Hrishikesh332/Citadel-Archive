@@ -22,20 +22,20 @@ must never do.
 
 Vault content and `ctdl_` tokens never belong in the public repo. See
 [`docs/public-and-private.md`](docs/public-and-private.md) or
-`https://citadel-archive-production.up.railway.app/skills/boundary`.
+`https://citadel-archive.onrender.com/skills/boundary`.
 
 ## Quick Reference
 
 | What | Value |
 |---|---|
-| Hosted URL | `https://citadel-archive-production.up.railway.app` |
-| Discovery manifest | `https://citadel-archive-production.up.railway.app/.well-known/citadel.json` |
-| Skill index | `https://citadel-archive-production.up.railway.app/skills` |
-| Connect skill | `https://citadel-archive-production.up.railway.app/skills/connect` |
-| Vault skill | `https://citadel-archive-production.up.railway.app/skills/vault` |
-| Boundary skill | `https://citadel-archive-production.up.railway.app/skills/boundary` |
+| Hosted URL | `https://citadel-archive.onrender.com` |
+| Discovery manifest | `https://citadel-archive.onrender.com/.well-known/citadel.json` |
+| Skill index | `https://citadel-archive.onrender.com/skills` |
+| Connect skill | `https://citadel-archive.onrender.com/skills/connect` |
+| Vault skill | `https://citadel-archive.onrender.com/skills/vault` |
+| Boundary skill | `https://citadel-archive.onrender.com/skills/boundary` |
 | HTTP API | Same host as hosted URL |
-| MCP endpoint | `https://citadel-archive-production.up.railway.app/mcp/` (hosted, no clone) |
+| MCP endpoint | `https://citadel-archive.onrender.com/mcp/` (hosted, no clone) |
 | MCP auth | `Authorization: Bearer ctdl_...` |
 | Token format | `ctdl_...` (service-account or user token) |
 | Roles | `reader`, `writer`, `admin` |
@@ -74,7 +74,7 @@ client at the hosted `/mcp/` URL and send the token in the `Authorization` heade
   "mcpServers": {
     "citadel": {
       "type": "http",
-      "url": "https://citadel-archive-production.up.railway.app/mcp/",
+      "url": "https://citadel-archive.onrender.com/mcp/",
       "headers": { "Authorization": "Bearer ${CITADEL_MCP_ACCESS_TOKEN}" }
     }
   }
@@ -255,7 +255,7 @@ uv run citadel learn --force
 
 Load the connector skill and follow it end-to-end:
 
-`https://citadel-archive-production.up.railway.app/skills/connect`
+`https://citadel-archive.onrender.com/skills/connect`
 
 Summary:
 

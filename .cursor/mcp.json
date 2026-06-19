@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "citadel": {
-      "url": "http://localhost:8000/mcp/",
+      "url": "https://citadel-archive.onrender.com/mcp/",
       "headers": {
         "Authorization": "Bearer ${env:CITADEL_MCP_ACCESS_TOKEN}"
       }

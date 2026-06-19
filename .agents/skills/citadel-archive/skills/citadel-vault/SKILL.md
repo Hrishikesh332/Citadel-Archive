@@ -1,15 +1,15 @@
 ---
 name: citadel-vault
-description: Use when a user asks project, source, architecture, or operational questions that may be answered from the Citadel Organization Vault; wants to persist durable project knowledge in Citadel; asks about organization memory, vault search, knowledge mesh, source-learning status, or needs to interact with the Citadel vault in any way. Triggers include "search citadel", "check citadel", "ask citadel", "add to citadel", "ingest into citadel", "citadel vault", "organization vault", and https://citadel-archive-production.up.railway.app/skills/vault.
+description: Use when a user asks project, source, architecture, or operational questions that may be answered from the Citadel Organization Vault; wants to persist durable project knowledge in Citadel; asks about organization memory, vault search, knowledge mesh, source-learning status, or needs to interact with the Citadel vault in any way. Triggers include "search citadel", "check citadel", "ask citadel", "add to citadel", "ingest into citadel", "citadel vault", "organization vault", and https://citadel-archive.onrender.com/skills/vault.
 ---
 
 # Citadel Vault
 
-**Skill URL:** `https://citadel-archive-production.up.railway.app/skills/vault`  
-**Setup first:** `https://citadel-archive-production.up.railway.app/skills/connect`  
-**Public vs private:** `https://citadel-archive-production.up.railway.app/skills/boundary`
+**Skill URL:** `https://citadel-archive.onrender.com/skills/vault`  
+**Setup first:** `https://citadel-archive.onrender.com/skills/connect`  
+**Public vs private:** `https://citadel-archive.onrender.com/skills/boundary`
 
-Organization memory lives on the **private Railway vault**, not in the public
+Organization memory lives on the **private Render vault**, not in the public
 Citadel-Archive git repo. Access it only through MCP/HTTP with the user's `ctdl_`
 token. Never commit vault content or tokens to git.
 
