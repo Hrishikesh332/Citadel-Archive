@@ -18,7 +18,7 @@ from typing import Any, Literal
 from kb.conflicts import KnowledgeConflictStore, detect_contribution_conflict
 from kb.llm_enrichment import EnrichedChunk, EnrichmentOutcome, enrich_source_material
 from kb.mesh import MeshState
-from kb.models import IngestResult
+from kb.models import IngestResult, SourceMetadata
 from kb.service import Citadel
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ class LearningProcess:
         run_improve: bool = False,
         detect_conflicts: bool = True,
         tier: Literal["full", "light"] = "full",
+        source_metadata: SourceMetadata | None = None,
     ) -> LearningOutcome:
         """Filter, optionally enrich/chunk, ingest, record mesh activity,
         detect conflicts, and optionally run improvement for one piece of
@@ -104,13 +105,23 @@ class LearningProcess:
         chunk_inputs = self._chunk_inputs(data, list(tags or []), enrichment)
 
         results: list[IngestResult] = []
-        for chunk_data, chunk_tags in chunk_inputs:
+        chunk_count = len(chunk_inputs)
+        for chunk_index, (chunk_data, chunk_tags) in enumerate(chunk_inputs):
+            chunk_metadata: SourceMetadata = {
+                **(source_metadata or {}),
+                "operation": operation,
+                "tier": tier,
+            }
+            if chunk_count > 1:
+                chunk_metadata["chunk_index"] = chunk_index
+                chunk_metadata["chunk_count"] = chunk_count
             try:
                 result = await self.citadel.ingest(
                     chunk_data,
                     dataset=dataset,
                     tags=chunk_tags,
                     session_id=session_id,
+                    source_metadata=chunk_metadata,
                 )
             except Exception as exc:
                 if self.mesh:

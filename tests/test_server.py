@@ -15,6 +15,7 @@ from kb.mesh import MeshState
 from kb.models import FeedbackResult, IngestResult
 from kb.obsidian_sync import ObsidianSyncStore
 from kb.server import app
+from kb.service import Citadel
 
 
 class FakeCitadel:
@@ -32,7 +33,14 @@ class FakeCitadel:
         return IngestResult(True, "accepted", kwargs["dataset"] or "notes", tuple(kwargs["tags"]))
 
     async def search(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
-        return [{"query": query, "dataset": kwargs["dataset"], "top_k": kwargs["top_k"]}]
+        return [
+            {
+                "query": query,
+                "content": f"{query} in {kwargs['dataset']}",
+                "dataset": kwargs["dataset"],
+                "top_k": kwargs["top_k"],
+            }
+        ]
 
     async def feedback(self, request: Any) -> FeedbackResult:
         return FeedbackResult(recorded=bool(request.qa_id), improved=True)
@@ -337,6 +345,106 @@ def test_api_uses_configured_citadel_service() -> None:
     assert updated_mesh.status_code == 200
     assert updated_mesh.json()["stats"]["feedback"] == 1
     assert upgrade.status_code == 200
+
+
+def test_search_feedback_improve_flow_uses_cognee_session(tmp_path: Path) -> None:
+    class FlowCognee:
+        def __init__(self) -> None:
+            self.feedback_calls: list[dict[str, Any]] = []
+            self.improve_calls: list[dict[str, Any]] = []
+
+        async def remember(self, data: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"ok": True}
+
+        async def recall(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
+            return [
+                {
+                    "qa_id": "qa-1",
+                    "answer": f"Answer for {query}",
+                    "metadata": {
+                        "source": "repo_content",
+                        "source_url": "https://github.com/example/repo/blob/main/README.md",
+                        "snapshot_ref": "doc_flow",
+                        "path": "README.md",
+                        "session_id": kwargs.get("session_id"),
+                    },
+                }
+            ]
+
+        async def add_feedback(self, **kwargs: Any) -> bool:
+            self.feedback_calls.append(kwargs)
+            return True
+
+        async def improve(self, **kwargs: Any) -> dict[str, Any]:
+            self.improve_calls.append(kwargs)
+            return {"ok": True}
+
+    cognee = FlowCognee()
+    app.state.citadel = Citadel(
+        CitadelConfig(
+            tenant_id="test",
+            default_dataset="notes",
+            default_session="personal-session",
+            admin_key="test-admin",
+            auto_improve=True,
+            build_global_context_index=True,
+        ),
+        cognee=cognee,
+    )
+    app.state.mesh = MeshState()
+    app.state.access_store = AccessStore(tmp_path / "access.json")
+    client = TestClient(app, base_url="https://testserver")
+    assert client.post("/admin/session", json={"access_key": "test-admin"}).status_code == 200
+
+    search = client.post("/search", json={"query": "source metadata", "top_k": 1})
+    hit = search.json()["results"][0]
+    feedback = client.post(
+        "/feedback",
+        json={
+            "qa_id": hit["qa_id"],
+            "score": 1,
+            "text": "useful",
+            "session_id": "personal-session",
+            "dataset": "notes",
+        },
+    )
+
+    assert search.status_code == 200
+    assert hit["id"] == "doc_flow"
+    assert hit["_citadel"]["document_endpoint"] == "/api/documents/doc_flow"
+    assert hit["_citadel"]["provenance"]["source"] == "repo_content"
+    assert feedback.status_code == 200
+    assert feedback.json() == {"recorded": True, "improved": True}
+    assert cognee.feedback_calls == [
+        {
+            "session_id": "personal-session",
+            "qa_id": "qa-1",
+            "score": 5,
+            "text": "useful",
+        }
+    ]
+    assert cognee.improve_calls == [
+        {
+            "dataset": "notes",
+            "session_ids": ["personal-session"],
+            "build_global_context_index": True,
+        }
+    ]
+
+
+def test_search_accepts_explicit_multi_dataset_scope() -> None:
+    client = authed_client()
+
+    response = client.post(
+        "/search",
+        json={"query": "source", "datasets": ["notes", "masumi-network"], "top_k": 4},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset"] == "notes"
+    assert payload["datasets"] == ["notes", "masumi-network"]
+    assert [result["dataset"] for result in payload["results"]] == ["notes", "masumi-network"]
 
 
 def test_knowledge_events_api_returns_resumable_timeline() -> None:
@@ -1524,12 +1632,13 @@ def test_knowledge_alias_returns_flat_agent_friendly_results() -> None:
     payload = response.json()
     assert payload["ok"] is True
     assert payload["query"] == "rotate keys"
-    assert payload["results"][0] == {
-        "text": "Rotate keys quarterly",
-        "source": "https://example.com/runbook",
-        "score": 0.92,
-        "tags": ["ops"],
-    }
+    assert payload["results"][0]["text"] == "Rotate keys quarterly"
+    assert payload["results"][0]["source"] == "https://example.com/runbook"
+    assert payload["results"][0]["score"] == 0.92
+    assert payload["results"][0]["tags"] == ["ops"]
+    assert payload["results"][0]["dataset"] == "notes"
+    assert payload["results"][0]["provenance"] == {"source_url": "https://example.com/runbook"}
+    assert payload["results"][0]["content_sha256"]
     assert payload["results"][1]["text"] == "bare string result"
     assert payload["results"][1]["source"] is None
 

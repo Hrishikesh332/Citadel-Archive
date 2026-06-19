@@ -70,6 +70,22 @@ npx skills add masumi-network/Citadel-Archive
 The installed root skill points the agent to the hosted MCP endpoint, the
 connector skill, the vault usage skill, and the public/private boundary rules.
 
+### Autonomous Agent Messaging
+
+For autonomous agents that need to communicate with each other, install Masumi
+Agent Messenger alongside the Citadel skill:
+
+```bash
+npm install -g @masumi_network/masumi-agent-messenger
+npx skills add masumi-network/masumi-agent-messenger --all
+```
+
+Keep the boundary clear: Citadel MCP is the agent's Organization Vault and tool
+access layer; Masumi Agent Messenger is the agent-to-agent communication layer.
+Do not add Messenger to `.mcp.json`, and do not automatically ingest Messenger
+threads into Citadel. Each autonomous agent should have its own Messenger slug
+and its own Citadel access token.
+
 For agents that cannot install skills, share this URL instead:
 
 ```text

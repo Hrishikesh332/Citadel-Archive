@@ -170,9 +170,51 @@ def test_search_omits_dataset_for_server_side_resolution(monkeypatch: pytest.Mon
 
     result = run_tool(server, "citadel_search", " source state ", None)
     explicit = run_tool(server, "citadel_search", " notes ", None, dataset="personal")
+    multi = run_tool(
+        server,
+        "citadel_search",
+        " notes ",
+        None,
+        datasets=["personal", "masumi-network"],
+    )
 
     assert result["payload"]["dataset"] is None
     assert explicit["payload"]["dataset"] == "personal"
+    assert multi["payload"]["datasets"] == ["personal", "masumi-network"]
+
+
+def test_feedback_and_improve_tools_forward_cognee_loop_calls() -> None:
+    client = FakeHttpClient()
+    server = create_mcp_server(client)
+
+    feedback = run_tool(
+        server,
+        "citadel_record_feedback",
+        "qa-1",
+        None,
+        score=1,
+        text="useful",
+        session_id="session-1",
+        dataset="notes",
+    )
+    improve = run_tool(
+        server,
+        "citadel_improve",
+        None,
+        dataset="notes",
+        session_ids=["session-1"],
+    )
+
+    assert feedback["path"] == "/feedback"
+    assert feedback["payload"] == {
+        "qa_id": "qa-1",
+        "score": 1,
+        "text": "useful",
+        "session_id": "session-1",
+        "dataset": "notes",
+    }
+    assert improve["path"] == "/improve"
+    assert improve["payload"] == {"dataset": "notes", "session_ids": ["session-1"]}
 
 
 def test_backup_mirror_tools_forward_admin_calls() -> None:

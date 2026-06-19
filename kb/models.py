@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+SourceMetadata = dict[str, Any]
+
 
 @dataclass(frozen=True)
 class IngestDecision:
@@ -16,6 +18,7 @@ class IngestRequest:
     dataset: str
     tags: tuple[str, ...] = field(default_factory=tuple)
     session_id: str | None = None
+    source_metadata: SourceMetadata | None = None
 
 
 @dataclass(frozen=True)

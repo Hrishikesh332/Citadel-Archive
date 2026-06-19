@@ -273,6 +273,32 @@ Current production verification: hosted MCP was tested on 2026-06-02 at commit
 `7a4a1d9`; `citadel_session`, `citadel_search`, and `citadel_ingest` all
 returned successfully with a writer token.
 
+## Pairing With Masumi Agent Messenger
+
+For autonomous agents that need to communicate with other agents, install the
+Messenger CLI and skill in addition to this Citadel skill:
+
+```bash
+npm install -g @masumi_network/masumi-agent-messenger
+npx skills add masumi-network/masumi-agent-messenger --all
+```
+
+Use Citadel MCP for Organization Vault access, source-linked memory, search,
+ingest, feedback, and audited admin operations. Use Masumi Agent Messenger for
+agent-to-agent communication, handoffs, unread-thread checks, and human approval
+threads.
+
+Rules for autonomous agents:
+
+- Give each agent identity its own Citadel `ctdl_...` token and its own
+  Messenger slug/profile.
+- Do not add Messenger to `.mcp.json`; it is a CLI/skill, not a Citadel MCP
+  server.
+- Do not automatically ingest Messenger threads into Citadel. A writer or admin
+  may intentionally add durable outcomes as curated vault contributions.
+- Messenger automation should use `--json` and follow the Messenger skill's
+  two-attempt limit before escalating to a human.
+
 ## Architecture Context
 
 - **Backend**: FastAPI + Cognee (Apache-2.0 knowledge engine)

@@ -16,6 +16,8 @@ class CogneeGateway(Protocol):
         dataset_name: str,
         session_id: str | None = None,
         tags: tuple[str, ...] = (),
+        source_metadata: dict[str, Any] | None = None,
+        use_domain_graph_model: bool = False,
     ) -> Any:
         ...
 
@@ -124,6 +126,9 @@ class CogneePublicClient:
         db_engine = get_relational_engine()
         await db_engine.create_database()
 
+    def _clean_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in metadata.items() if value is not None}
+
     def _data_with_metadata(self, data: Any, metadata: dict[str, Any] | None) -> Any:
         if not metadata:
             return data
@@ -146,6 +151,20 @@ class CogneePublicClient:
         if isinstance(data, list):
             return [attach(item) for item in data]
         return attach(data)
+
+    def _domain_graph_options(self, *, enabled: bool, session_id: str | None) -> dict[str, Any]:
+        if not enabled or session_id:
+            return {}
+        try:
+            from kb.cognee_models import citadel_domain_graph_options
+
+            return citadel_domain_graph_options()
+        except Exception as exc:
+            logger.warning(
+                "Citadel Cognee domain graph model disabled after %s",
+                exc.__class__.__name__,
+            )
+            return {}
 
     async def _ensure_cognee_ready(self, cognee: Any) -> None:
         if self._startup_migrations_done:
@@ -171,18 +190,31 @@ class CogneePublicClient:
         dataset_name: str,
         session_id: str | None = None,
         tags: tuple[str, ...] = (),
+        source_metadata: dict[str, Any] | None = None,
+        use_domain_graph_model: bool = False,
     ) -> Any:
         self._prepare_cognee_environment()
         import cognee
 
         await self._ensure_cognee_ready(cognee)
-        metadata = {"citadel_tags": list(tags)} if tags else None
+        metadata = self._clean_metadata(
+            {
+                **(source_metadata or {}),
+                "citadel_tags": list(tags),
+                "dataset": dataset_name,
+                "session_id": session_id,
+            }
+        )
         data = self._data_with_metadata(data, metadata)
 
         if hasattr(cognee, "remember"):
             kwargs: dict[str, Any] = {
                 "dataset_name": dataset_name,
                 "session_id": session_id,
+                **self._domain_graph_options(
+                    enabled=use_domain_graph_model,
+                    session_id=session_id,
+                ),
             }
             if session_id:
                 kwargs["self_improvement"] = False
@@ -196,7 +228,13 @@ class CogneePublicClient:
             kwargs["metadata"] = metadata
 
         added = await cognee.add(data, **kwargs)
-        cognified = await cognee.cognify(datasets=[dataset_name])
+        cognified = await cognee.cognify(
+            datasets=[dataset_name],
+            **self._domain_graph_options(
+                enabled=use_domain_graph_model,
+                session_id=session_id,
+            ),
+        )
         return {"added": added, "cognified": cognified}
 
     async def recall(

@@ -133,6 +133,114 @@ async def test_cognee_public_client_does_not_pass_external_metadata_keyword(
 
 
 @pytest.mark.asyncio
+async def test_cognee_public_client_wraps_data_item_metadata(monkeypatch: Any) -> None:
+    received: dict[str, Any] = {}
+
+    class DataItem:
+        def __init__(
+            self,
+            data: Any,
+            label: str | None = None,
+            external_metadata: dict[str, Any] | None = None,
+            data_id: str | None = None,
+        ) -> None:
+            self.data = data
+            self.label = label
+            self.external_metadata = external_metadata
+            self.data_id = data_id
+
+    async def run_startup_migrations() -> None:
+        return None
+
+    async def remember(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        received["args"] = args
+        received["kwargs"] = kwargs
+        return {"ok": True}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "cognee",
+        SimpleNamespace(run_startup_migrations=run_startup_migrations, remember=remember),
+    )
+    monkeypatch.setitem(sys.modules, "cognee.tasks", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "cognee.tasks.ingestion", SimpleNamespace())
+    monkeypatch.setitem(
+        sys.modules,
+        "cognee.tasks.ingestion.data_item",
+        SimpleNamespace(DataItem=DataItem),
+    )
+
+    client = CogneePublicClient()
+
+    await client.remember(
+        "note",
+        dataset_name="notes",
+        tags=("github",),
+        source_metadata={"source": "repo_content", "path": "README.md"},
+    )
+
+    item = received["args"][0]
+    assert isinstance(item, DataItem)
+    assert item.external_metadata["source"] == "repo_content"
+    assert item.external_metadata["path"] == "README.md"
+    assert item.external_metadata["citadel_tags"] == ["github"]
+    assert item.external_metadata["dataset"] == "notes"
+
+
+@pytest.mark.asyncio
+async def test_cognee_public_client_delegates_feedback_and_improve(monkeypatch: Any) -> None:
+    calls: dict[str, Any] = {}
+
+    async def run_startup_migrations() -> None:
+        return None
+
+    async def add_feedback(**kwargs: Any) -> bool:
+        calls["feedback"] = kwargs
+        return True
+
+    async def improve(**kwargs: Any) -> dict[str, Any]:
+        calls["improve"] = kwargs
+        return {"ok": True}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "cognee",
+        SimpleNamespace(
+            run_startup_migrations=run_startup_migrations,
+            session=SimpleNamespace(add_feedback=add_feedback),
+            improve=improve,
+        ),
+    )
+    client = CogneePublicClient()
+
+    recorded = await client.add_feedback(
+        session_id="session-1",
+        qa_id="qa-1",
+        score=5,
+        text="useful",
+    )
+    improved = await client.improve(
+        dataset="notes",
+        session_ids=["session-1"],
+        build_global_context_index=True,
+    )
+
+    assert recorded is True
+    assert improved == {"ok": True}
+    assert calls["feedback"] == {
+        "session_id": "session-1",
+        "qa_id": "qa-1",
+        "feedback_score": 5,
+        "feedback_text": "useful",
+    }
+    assert calls["improve"] == {
+        "dataset": "notes",
+        "session_ids": ["session-1"],
+        "build_global_context_index": True,
+    }
+
+
+@pytest.mark.asyncio
 async def test_cognee_public_client_uses_chunk_search_by_default(monkeypatch: Any) -> None:
     received: dict[str, Any] = {}
 

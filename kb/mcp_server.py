@@ -549,6 +549,7 @@ def create_mcp_server(
         query: str,
         ctx: Context,
         dataset: str | None = None,
+        datasets: list[str] | None = None,
         session_id: str | None = None,
         top_k: int = 10,
     ) -> dict[str, Any]:
@@ -560,6 +561,7 @@ def create_mcp_server(
                 {
                     "query": _require_non_empty(query, "query"),
                     "dataset": dataset,
+                    "datasets": datasets,
                     "session_id": session_id,
                     "top_k": _clamp_top_k(top_k),
                 },
@@ -629,6 +631,9 @@ def create_mcp_server(
                     "dataset": dataset,
                     "tags": tags or [],
                     "session_id": session_id,
+                    "source_metadata": {
+                        "source": "mcp_ingest",
+                    },
                 },
                 tool_name="citadel_ingest",
             )

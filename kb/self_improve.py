@@ -257,6 +257,12 @@ class SelfImprovement:
                     tags=[*proposal.get("tags", []), OPTIMIZE_TAG],
                     operation="self_improve",
                     detect_conflicts=False,
+                    source_metadata={
+                        "source": "self_improvement",
+                        "source_id": proposal["label"],
+                        "snapshot_ref": f"self-improve:{proposal['label']}",
+                        "title": proposal["label"],
+                    },
                 )
             except Exception as exc:
                 logger.warning(

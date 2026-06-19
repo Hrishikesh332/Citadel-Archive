@@ -86,6 +86,17 @@ def _conflicts_store_path(value: str | None) -> str:
     return str(Path(root) / "conflicts.json")
 
 
+def _ingest_ledger_path(value: str | None) -> str | None:
+    if value is not None:
+        return value or None
+    root = (
+        os.getenv("CITADEL_STATE_DIRECTORY")
+        or os.getenv("SYSTEM_ROOT_DIRECTORY")
+        or ("/data/.citadel" if Path("/data").exists() else ".citadel")
+    )
+    return str(Path(root) / "ingest_ledger.json")
+
+
 def _backup_mirror_root_path(value: str | None) -> str:
     if value:
         return value
@@ -107,6 +118,7 @@ class CitadelConfig:
     access_store_path: str = ".citadel/access.json"
     obsidian_sync_state_path: str = ".citadel/obsidian_sync_state.json"
     conflicts_store_path: str = ".citadel/conflicts.json"
+    ingest_ledger_path: str | None = None
     conflicts_max_records: int = 500
     mesh_graph_max_nodes: int = 200
     audit_max_events: int = 1000
@@ -123,6 +135,7 @@ class CitadelConfig:
     )
     auto_improve: bool = False
     build_global_context_index: bool = False
+    cognee_domain_graph_model_enabled: bool = False
     github_org: str = "masumi-network"
     github_sync_dataset: str = "masumi-network"
     github_sync_session: str = "masumi-github-daily"
@@ -192,6 +205,7 @@ class CitadelConfig:
             conflicts_store_path=_conflicts_store_path(
                 os.getenv("CITADEL_CONFLICTS_STORE_PATH")
             ),
+            ingest_ledger_path=_ingest_ledger_path(os.getenv("CITADEL_INGEST_LEDGER_PATH")),
             conflicts_max_records=_int(
                 os.getenv("CITADEL_CONFLICTS_MAX_RECORDS"),
                 default=500,
@@ -212,6 +226,9 @@ class CitadelConfig:
             ),
             auto_improve=_bool(os.getenv("CITADEL_AUTO_IMPROVE")),
             build_global_context_index=_bool(os.getenv("CITADEL_BUILD_GLOBAL_CONTEXT_INDEX")),
+            cognee_domain_graph_model_enabled=_bool(
+                os.getenv("CITADEL_COGNEE_DOMAIN_GRAPH_MODEL_ENABLED")
+            ),
             github_org=os.getenv("CITADEL_GITHUB_ORG", "masumi-network"),
             github_sync_dataset=os.getenv("CITADEL_GITHUB_SYNC_DATASET", "masumi-network"),
             github_sync_session=os.getenv("CITADEL_GITHUB_SYNC_SESSION", "masumi-github-daily"),

@@ -159,11 +159,13 @@ class IngestBody(BaseModel):
     dataset: str | None = None
     tags: list[str] = Field(default_factory=list)
     session_id: str | None = None
+    source_metadata: dict[str, Any] | None = None
 
 
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)
     dataset: str | None = None
+    datasets: list[str] | None = None
     session_id: str | None = None
     top_k: int = Field(default=10, ge=1, le=100)
 
@@ -599,6 +601,24 @@ def resolve_search_datasets(
     return [dataset]
 
 
+def resolve_search_dataset_list(
+    identity: AccessIdentity,
+    requested: str | None,
+    requested_many: list[str] | None,
+    config: CitadelConfig,
+) -> list[str]:
+    if not requested_many:
+        return resolve_search_datasets(identity, requested, config)
+    if requested:
+        raise HTTPException(status_code=422, detail="Use either dataset or datasets, not both.")
+    datasets = list(dict.fromkeys(item.strip() for item in requested_many if item.strip()))
+    if not datasets:
+        raise HTTPException(status_code=422, detail="datasets must include at least one dataset.")
+    for dataset in datasets:
+        enforce_dataset_allowlist(identity, dataset)
+    return datasets
+
+
 def resolve_search_dataset(
     identity: AccessIdentity,
     requested: str | None,
@@ -689,6 +709,16 @@ def resolve_write_dataset(
 
 def search_result_dedup_key(result: Any) -> str:
     if isinstance(result, dict):
+        metadata = result_metadata(result)
+        stable_id = first_string(
+            result.get("id"),
+            result.get("qa_id"),
+            metadata.get("snapshot_ref"),
+            metadata.get("document_id"),
+            metadata.get("content_hash"),
+        )
+        if stable_id:
+            return stable_id
         text = first_string(
             result.get("text"),
             result.get("content"),
@@ -769,6 +799,7 @@ async def execute_learning_writes(
     operation: str,
     detect_conflicts: bool = True,
     run_improve: bool = False,
+    source_metadata: dict[str, Any] | None = None,
 ) -> tuple[LearningOutcome, list[LearningOutcome]]:
     outcomes: list[LearningOutcome] = []
     primary: LearningOutcome | None = None
@@ -782,6 +813,11 @@ async def execute_learning_writes(
             detect_conflicts=detect_conflicts and target.tier == "full",
             run_improve=run_improve and target.tier == "full",
             tier=target.tier,
+            source_metadata={
+                **(source_metadata or {}),
+                "target_dataset": target.dataset,
+                "tier": target.tier,
+            },
         )
         outcomes.append(outcome)
         if primary is None or target.tier == "full":
@@ -1022,7 +1058,7 @@ def first_string(*values: Any) -> str | None:
 
 
 def result_provenance(result: dict[str, Any]) -> dict[str, str]:
-    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    metadata = result_metadata(result)
     provenance = {
         "source": first_string(
             result.get("source"),
@@ -1046,8 +1082,32 @@ def result_provenance(result: dict[str, Any]) -> dict[str, str]:
         ),
         "title": first_string(result.get("title"), metadata.get("title")),
         "session_id": first_string(result.get("session_id"), metadata.get("session_id")),
+        "source_id": first_string(result.get("source_id"), metadata.get("source_id")),
+        "snapshot_ref": first_string(
+            result.get("snapshot_ref"),
+            metadata.get("snapshot_ref"),
+            metadata.get("document_id"),
+        ),
     }
     return {key: value for key, value in provenance.items() if value}
+
+
+def result_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for value in (
+        result.get("metadata"),
+        result.get("external_metadata"),
+        result.get("payload"),
+        result.get("raw"),
+    ):
+        if isinstance(value, dict):
+            nested = value.get("metadata") if isinstance(value.get("metadata"), dict) else {}
+            raw_nested = value.get("raw") if isinstance(value.get("raw"), dict) else {}
+            metadata.update(value)
+            metadata.update(nested)
+            if isinstance(raw_nested.get("metadata"), dict):
+                metadata.update(raw_nested["metadata"])
+    return metadata
 
 
 def document_endpoint_for_result(result_id: str) -> str | None:
@@ -1057,6 +1117,10 @@ def document_endpoint_for_result(result_id: str) -> str | None:
 
 
 def result_content_sha256(result: dict[str, Any]) -> str:
+    metadata = result_metadata(result)
+    content_hash = first_string(result.get("content_hash"), metadata.get("content_hash"))
+    if content_hash:
+        return content_hash
     content_basis = {key: value for key, value in result.items() if key != "_citadel"}
     encoded = json.dumps(content_basis, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -1068,6 +1132,15 @@ def with_result_id(result: dict[str, Any]) -> dict[str, Any]:
     Results that already supply an id (e.g. the GitHub digest fallback) are left
     untouched. Other dict results get a content-derived id for traceability.
     """
+    metadata = result_metadata(result)
+    stable_id = first_string(
+        result.get("id"),
+        metadata.get("snapshot_ref"),
+        metadata.get("document_id"),
+        metadata.get("source_document_id"),
+    )
+    if stable_id:
+        return {"id": stable_id, **result}
     if result.get("id"):
         return result
     basis = json.dumps(result, sort_keys=True, default=str)
@@ -1088,6 +1161,7 @@ def with_result_metadata(result: Any, index: int, dataset: str) -> Any:
         "result_id": result_id,
         "content_sha256": result_content_sha256(normalized),
         "provenance": result_provenance(normalized),
+        "source_metadata": result_metadata(normalized),
         "retrieval": {
             "untrusted_context": True,
             "citation_required": True,
@@ -1822,6 +1896,15 @@ async def push_obsidian_sync(body: ObsidianPushBody, request: Request) -> Any:
                 session_id=push_session_id,
                 operation="obsidian_sync",
                 detect_conflicts=False,
+                source_metadata={
+                    "source": "obsidian_vault",
+                    "source_id": body.vault_id,
+                    "snapshot_ref": accepted.get("document_id"),
+                    "document_id": accepted.get("document_id"),
+                    "path": accepted.get("path"),
+                    "title": source_document.path,
+                    "content_hash": accepted.get("content_hash"),
+                },
             )
         except Exception as exc:  # pragma: no cover - depends on runtime Cognee configuration.
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -2180,6 +2263,13 @@ async def ingest(body: IngestBody, request: Request) -> Any:
             tags=body.tags,
             session_id=session_id,
             operation="ingest",
+            source_metadata={
+                **(body.source_metadata or {}),
+                "source": (body.source_metadata or {}).get("source") or "api_ingest",
+                "source_id": (body.source_metadata or {}).get("source_id") or actor.actor_id,
+                "snapshot_ref": (body.source_metadata or {}).get("snapshot_ref"),
+                "title": (body.source_metadata or {}).get("title"),
+            },
         )
     except Exception as exc:  # pragma: no cover - depends on runtime Cognee configuration.
         record_mcp_audit(
@@ -2260,6 +2350,14 @@ async def contribute(body: ContributeBody, request: Request) -> Any:
             session_id=None,
             operation="contribute",
             run_improve=citadel.config.contribute_run_improve,
+            source_metadata={
+                "source": "vault_contribution",
+                "source_id": actor.actor_id,
+                "snapshot_ref": f"contribution:{hashlib.sha256(data.encode('utf-8')).hexdigest()[:16]}",
+                "source_url": body.source_url.strip() if body.source_url else None,
+                "title": body.title.strip(),
+                "author": actor.actor_name or actor.actor_id,
+            },
         )
     except Exception as exc:  # pragma: no cover - depends on runtime Cognee configuration.
         get_access_store().record_event(
@@ -2328,6 +2426,7 @@ def flat_knowledge_result(result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {"text": str(result), "source": None}
     provenance = result_provenance(result)
+    envelope = result.get("_citadel") if isinstance(result.get("_citadel"), dict) else {}
     text = first_string(
         result.get("text"),
         result.get("content"),
@@ -2347,11 +2446,21 @@ def flat_knowledge_result(result: Any) -> dict[str, Any]:
         "source": provenance.get("source_url")
         or provenance.get("source")
         or provenance.get("path"),
+        "provenance": provenance,
     }
+    if envelope.get("dataset"):
+        payload["dataset"] = envelope["dataset"]
+    if envelope.get("result_id"):
+        payload["id"] = envelope["result_id"]
+    if envelope.get("document_endpoint"):
+        payload["document_endpoint"] = envelope["document_endpoint"]
+    content_sha = envelope.get("content_sha256")
+    if isinstance(content_sha, str):
+        payload["content_sha256"] = content_sha
     score = result.get("score")
     if isinstance(score, (int, float)) and not isinstance(score, bool):
         payload["score"] = score
-    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    metadata = result_metadata(result)
     tags = result.get("tags") or metadata.get("citadel_tags") or metadata.get("tags")
     if isinstance(tags, list):
         payload["tags"] = [str(tag) for tag in tags if isinstance(tag, (str, int, float))]
@@ -2395,13 +2504,17 @@ async def knowledge(
             result_count=sum(1 for ds, _ in merged if ds == search_dataset),
         )
     primary_dataset = search_datasets[0]
+    normalized = [
+        with_result_metadata(result, index, search_dataset)
+        for index, (search_dataset, result) in enumerate(merged)
+    ]
     return jsonable_encoder(
         {
             "ok": True,
             "query": query,
             "dataset": primary_dataset,
             "datasets": search_datasets if len(search_datasets) > 1 else None,
-            "results": [flat_knowledge_result(result) for _, result in merged],
+            "results": [flat_knowledge_result(result) for result in normalized],
         }
     )
 
@@ -2453,7 +2566,7 @@ async def search(body: SearchBody, request: Request) -> Any:
     actor = require_access(request, "reader", "kb:search")
     citadel = get_citadel()
     mesh_state = get_mesh()
-    search_datasets = resolve_search_datasets(actor, body.dataset, citadel.config)
+    search_datasets = resolve_search_dataset_list(actor, body.dataset, body.datasets, citadel.config)
     search_sessions = resolve_search_sessions(actor, body.session_id, search_datasets)
     try:
         merged = await search_across_datasets(

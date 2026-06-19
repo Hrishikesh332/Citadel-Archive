@@ -975,11 +975,18 @@ function resultSummary(result) {
 function resultMetaRows(result) {
   const envelope = resultEnvelope(result);
   const provenance = resultProvenance(result);
+  const sourceMetadata =
+    envelope.source_metadata && typeof envelope.source_metadata === "object"
+      ? envelope.source_metadata
+      : {};
   return [
     ["Dataset", envelope.dataset || result?.dataset],
     ["Source", provenance.source || result?.source],
+    ["Source ID", provenance.source_id || sourceMetadata.source_id],
+    ["Snapshot", provenance.snapshot_ref || sourceMetadata.snapshot_ref],
     ["Path", provenance.path],
     ["Session", provenance.session_id],
+    ["Tier", sourceMetadata.tier],
     ["Hash", envelope.content_sha256 ? envelope.content_sha256.slice(0, 12) : null],
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
@@ -1074,11 +1081,17 @@ async function loadDocumentPreview(button, endpoint, panel) {
   }
 }
 
-function fillFeedbackForm(qaId, score = "1") {
+function fillFeedbackForm(qaId, score = "1", context = {}) {
   const form = document.getElementById("feedbackForm");
   const qaInput = form.querySelector("[name='qaId']");
   qaInput.value = qaId;
   qaInput.setAttribute("aria-invalid", "false");
+  if (context.dataset) {
+    form.querySelector("[name='dataset']").value = context.dataset;
+  }
+  if (context.sessionId) {
+    form.querySelector("[name='sessionId']").value = context.sessionId;
+  }
   const scoreInput = form.querySelector(`[name='score'][value='${score}']`);
   if (scoreInput) scoreInput.checked = true;
   form.querySelector("[name='text']").focus();
@@ -2938,11 +2951,20 @@ document.getElementById("searchForm").addEventListener("submit", async (event) =
   setSearchStatus("Searching", "status-standby");
   results.append(searchLoadingState());
   try {
+    const datasetValue = String(formData.get("dataset") || "").trim();
+    const datasets = datasetValue
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const searchScope =
+      datasets.length > 1
+        ? { datasets }
+        : { dataset: datasets[0] || null };
     const response = await api("/search", {
       method: "POST",
       body: JSON.stringify({
         query,
-        dataset: String(formData.get("dataset") || "").trim() || null,
+        ...searchScope,
         top_k: topK,
       }),
     });
@@ -3112,8 +3134,18 @@ function renderSearchResults(results, response = {}) {
       action.className = "secondary-button result-feedback-button";
       action.type = "button";
       action.textContent = "Use for feedback";
-      action.addEventListener("click", () => fillFeedbackForm(feedbackId));
+      action.addEventListener("click", () =>
+        fillFeedbackForm(feedbackId, "1", {
+          dataset: envelope.dataset,
+          sessionId: provenance.session_id,
+        })
+      );
       actions.append(action);
+    } else {
+      const note = document.createElement("span");
+      note.className = "result-feedback-note";
+      note.textContent = "No Cognee QA ID on this result";
+      actions.append(note);
     }
     if (actions.children.length) {
       item.append(actions);

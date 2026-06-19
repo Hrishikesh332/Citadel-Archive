@@ -13,6 +13,7 @@ import argparse
 import asyncio
 from fnmatch import fnmatchcase
 from datetime import UTC, datetime
+from hashlib import sha256
 import json
 import logging
 from pathlib import Path
@@ -338,6 +339,15 @@ class GitHubOrgSyncer:
                 tags=["github", self.org, "daily-sync", "repository-activity"],
                 run_improve=self.run_improve,
                 detect_conflicts=False,
+                source_metadata={
+                    "source": "github_sync_state",
+                    "source_id": self.org,
+                    "snapshot_ref": f"github-digest:{sha256(update.digest.encode('utf-8')).hexdigest()[:16]}",
+                    "source_url": SOURCE_URL_TEMPLATE.format(org=self.org),
+                    "title": f"{self.org} GitHub daily update",
+                    "content_hash": sha256(update.digest.encode("utf-8")).hexdigest(),
+                    "checked_at": checked_at,
+                },
             )
             ingest_result = outcome.ingest
             improve_result = outcome.improve

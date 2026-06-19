@@ -12,7 +12,6 @@ import argparse
 import asyncio
 import base64
 from dataclasses import dataclass
-from fnmatch import fnmatchcase
 from hashlib import sha256
 import json
 import logging
@@ -424,6 +423,18 @@ class RepoContentSyncer:
                         operation="repo_content_sync",
                         run_improve=self.config.repo_content_sync_run_improve,
                         detect_conflicts=False,
+                        source_metadata={
+                            "source": "repo_content",
+                            "source_id": key,
+                            "source_url": file.html_url,
+                            "path": file.path,
+                            "title": f"{file.repo}/{file.path}",
+                            "commit": file.ref,
+                            "blob_sha": file.sha,
+                            "content_hash": file.content_hash,
+                            "snapshot_ref": f"repo:{sha256(key.encode('utf-8')).hexdigest()[:16]}",
+                            "checked_at": checked_at,
+                        },
                     )
                     if any(result.accepted for result in outcome.all_ingests):
                         ingested_files += 1

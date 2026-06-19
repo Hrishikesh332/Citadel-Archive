@@ -51,6 +51,52 @@ async def test_ingest_applies_tags_and_dataset() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ingest_forwards_source_metadata() -> None:
+    fake = FakeCognee()
+    kb = Citadel(CitadelConfig(default_dataset="notes"), cognee=fake)
+
+    result = await kb.ingest(
+        "A sourced note",
+        source_metadata={
+            "source": "repo_content",
+            "source_id": "org/repo/README.md",
+            "source_url": "https://github.com/org/repo/blob/main/README.md",
+            "path": "README.md",
+        },
+    )
+
+    assert result.accepted
+    metadata = fake.remember_calls[0]["source_metadata"]
+    assert metadata["source"] == "repo_content"
+    assert metadata["source_id"] == "org/repo/README.md"
+    assert metadata["dataset"] == "notes"
+    assert metadata["content_hash"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_ledger_rejects_duplicate_after_restart(tmp_path: Any) -> None:
+    ledger_path = tmp_path / "ingest_ledger.json"
+    first_fake = FakeCognee()
+    config = CitadelConfig(default_dataset="notes", ingest_ledger_path=str(ledger_path))
+    first = Citadel(config, cognee=first_fake)
+
+    accepted = await first.ingest(
+        "Same source revision",
+        source_metadata={"source": "obsidian_vault", "source_id": "doc_1"},
+    )
+    second = Citadel(config, cognee=FakeCognee())
+    duplicate = await second.ingest(
+        "Same source revision",
+        source_metadata={"source": "obsidian_vault", "source_id": "doc_1"},
+    )
+
+    assert accepted.accepted
+    assert not duplicate.accepted
+    assert duplicate.reason == "duplicate_persisted"
+    assert len(first_fake.remember_calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_ingest_rejects_duplicate_in_process() -> None:
     fake = FakeCognee()
     kb = Citadel(CitadelConfig(), cognee=fake)
@@ -126,4 +172,5 @@ async def test_feedback_can_auto_improve() -> None:
     assert result.recorded
     assert result.improved
     assert fake.feedback_calls[0]["qa_id"] == "qa-1"
+    assert fake.feedback_calls[0]["score"] == 5
     assert fake.improve_calls[0]["session_ids"] == ["personal-session"]
