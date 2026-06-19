@@ -178,11 +178,31 @@ function api(path, options = {}) {
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
-      const message = data?.detail || data?.message || "Request failed";
+      const message = formatApiError(data) || "Request failed";
       throw new Error(message);
     }
     return data;
   });
+}
+
+function formatApiError(data) {
+  const detail = data?.detail ?? data?.message;
+  if (!detail) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        const location = Array.isArray(item?.loc) ? item.loc.join(".") : "";
+        const message = item?.msg || JSON.stringify(item);
+        return location ? `${location}: ${message}` : message;
+      })
+      .join("; ");
+  }
+  if (typeof detail === "object") {
+    return detail.message || detail.msg || JSON.stringify(detail);
+  }
+  return String(detail);
 }
 
 function setBusy(button, busy, label) {
