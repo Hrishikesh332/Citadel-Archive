@@ -1,0 +1,200 @@
+from __future__ import annotations
+
+from typing import Any
+
+import tomllib
+
+from scripts import run_railway
+
+
+def test_railway_toml_uses_testable_dispatcher() -> None:
+    with open("railway.toml", "rb") as file:
+        config = tomllib.load(file)
+
+    assert config["deploy"]["startCommand"] == "python -m scripts.run_railway"
+
+
+def test_web_mode_execs_uvicorn(monkeypatch: Any) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def execvp(binary: str, args: list[str]) -> None:
+        calls.append((binary, args))
+        raise RuntimeError("stop")
+
+    monkeypatch.setenv("PORT", "9000")
+    monkeypatch.setattr(run_railway.os, "execvp", execvp)
+
+    try:
+        run_railway.run("web")
+    except RuntimeError as exc:
+        assert str(exc) == "stop"
+
+    assert calls == [
+        (
+            "python",
+            [
+                "python",
+                "-m",
+                "uvicorn",
+                "kb.server:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "9000",
+            ],
+        )
+    ]
+
+
+def test_learning_agent_mode_runs_github_sync(monkeypatch: Any) -> None:
+    from scripts import run_github_sync
+
+    calls: list[str] = []
+
+    def run_sync() -> int:
+        calls.append("github-sync")
+        return 0
+
+    monkeypatch.setattr(run_github_sync, "run", run_sync)
+
+    assert run_railway.run("learning-agent") == 0
+    assert calls == ["github-sync"]
+
+
+def test_backup_mirror_mode_runs_backup_job(monkeypatch: Any) -> None:
+    from scripts import run_backup_mirror
+
+    calls: list[str] = []
+
+    def run_mirror() -> int:
+        calls.append("backup-mirror")
+        return 0
+
+    monkeypatch.setattr(run_backup_mirror, "run", run_mirror)
+
+    assert run_railway.run("backup-mirror") == 0
+    assert calls == ["backup-mirror"]
+
+
+def test_unknown_mode_fails() -> None:
+    assert run_railway.run("not-real") == 1
+
+
+def _patch_stages(
+    monkeypatch: Any,
+    calls: list[str],
+    *,
+    github_code: int = 0,
+    backup_code: int = 0,
+    self_improve_code: int = 0,
+    github_raises: bool = False,
+    skills_raises: bool = False,
+) -> None:
+    from scripts import run_backup_mirror, run_github_sync, run_self_improve
+
+    import kb.skills as skills
+
+    def fake_github() -> int:
+        calls.append("github_sync")
+        if github_raises:
+            raise RuntimeError("github exploded")
+        return github_code
+
+    def fake_skills_refresh(state_path: Any = None) -> dict[str, Any]:
+        calls.append("skills_refresh")
+        if skills_raises:
+            raise RuntimeError("skills exploded")
+        return {"ok": True, "skills": 3, "changed": [], "added": [], "removed": []}
+
+    def fake_self_improve() -> int:
+        calls.append("self_improve")
+        return self_improve_code
+
+    def fake_backup() -> int:
+        calls.append("backup_mirror")
+        return backup_code
+
+    def fake_repo_content() -> int:
+        calls.append("repo_content_sync")
+        return 0
+
+    monkeypatch.setattr(run_github_sync, "run", fake_github)
+    monkeypatch.setattr(run_railway, "_repo_content_sync_stage", fake_repo_content)
+    monkeypatch.setattr(skills, "refresh_skill_catalog", fake_skills_refresh)
+    monkeypatch.setattr(run_self_improve, "run", fake_self_improve)
+    monkeypatch.setattr(run_backup_mirror, "run", fake_backup)
+
+
+def _clear_pipeline_env(monkeypatch: Any) -> None:
+    for name in (
+        "CITADEL_PIPELINE_GITHUB_SYNC_ENABLED",
+        "CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED",
+        "CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED",
+        "CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED",
+        "CITADEL_SELF_IMPROVE_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_pipeline_runs_all_enabled_stages_in_order(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_SELF_IMPROVE_ENABLED", "true")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "repo_content_sync", "skills_refresh", "self_improve", "backup_mirror"]
+
+
+def test_pipeline_self_improve_stage_is_off_by_default(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "repo_content_sync", "skills_refresh", "backup_mirror"]
+
+
+def test_pipeline_stage_toggles_disable_individual_stages(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED", "false")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "repo_content_sync"]
+
+
+def test_pipeline_continues_past_a_failed_stage(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls, github_raises=True)
+
+    assert run_railway.run("pipeline") == 0
+    assert calls == ["github_sync", "repo_content_sync", "skills_refresh", "backup_mirror"]
+
+
+def test_pipeline_exits_nonzero_only_when_all_enabled_stages_fail(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED", "false")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls, github_raises=True, backup_code=1)
+
+    assert run_railway.run("pipeline") == 1
+    assert calls == ["github_sync", "backup_mirror"]
+
+
+def test_pipeline_mode_aliases_with_everything_disabled(monkeypatch: Any) -> None:
+    _clear_pipeline_env(monkeypatch)
+    monkeypatch.setenv("CITADEL_PIPELINE_GITHUB_SYNC_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_REPO_CONTENT_SYNC_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_SKILLS_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("CITADEL_PIPELINE_BACKUP_MIRROR_ENABLED", "false")
+    calls: list[str] = []
+    _patch_stages(monkeypatch, calls)
+
+    assert run_railway.run("all") == 0
+    assert run_railway.run("cron") == 0
+    assert calls == []

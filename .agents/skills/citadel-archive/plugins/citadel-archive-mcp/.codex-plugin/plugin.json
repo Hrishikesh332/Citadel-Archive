@@ -1,0 +1,45 @@
+{
+  "name": "citadel-archive-mcp",
+  "version": "0.2.0",
+  "description": "Connect coding agents to the Citadel Organization Vault through MCP. Provides search, ingest, mesh exploration, source-learning status, and admin operations with role-based access control.",
+  "author": {
+    "name": "Citadel Archive",
+    "url": "https://github.com/masumi-network"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "citadel",
+    "mcp",
+    "agents",
+    "organization-vault",
+    "knowledge-base",
+    "cognee",
+    "search",
+    "ingest"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Citadel Archive MCP",
+    "shortDescription": "Search and update the Citadel Organization Vault from any MCP-capable agent.",
+    "longDescription": "Citadel Archive MCP gives coding agents controlled reader, writer, and admin access to the Citadel Organization Vault. Search team knowledge, explore the knowledge mesh, check source-learning status, ingest durable context, record feedback, and run admin operations — all through the local MCP stdio wrapper backed by the hosted Citadel API.",
+    "developerName": "Citadel Archive",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Search",
+      "Knowledge Base",
+      "Organization Vault",
+      "Source Learning",
+      "Knowledge Mesh"
+    ],
+    "defaultPrompt": [
+      "Search Citadel before answering this project question.",
+      "Add this durable decision to the Citadel Organization Vault.",
+      "Summarize recent Citadel source-learning changes.",
+      "Check Citadel for any prior architecture decisions about this topic.",
+      "Ingest this runbook into Citadel for the team."
+    ],
+    "brandColor": "#5865F2"
+  }
+}

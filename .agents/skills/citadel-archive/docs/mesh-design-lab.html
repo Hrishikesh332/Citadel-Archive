@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Citadel Knowledge Dashboard</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d0f12;
+        --surface: #14181d;
+        --surface-2: #191f25;
+        --surface-3: #202730;
+        --line: #2e3842;
+        --line-strong: #43515f;
+        --text: #f4f7f8;
+        --soft: #c7d0d7;
+        --muted: #8f9aa5;
+        --accent: #63d8b5;
+        --accent-soft: rgba(99, 216, 181, 0.13);
+        --blue: #78baff;
+        --blue-soft: rgba(120, 186, 255, 0.13);
+        --amber: #f3cb72;
+        --amber-soft: rgba(243, 203, 114, 0.13);
+        --red: #ff8580;
+        --red-soft: rgba(255, 133, 128, 0.13);
+        --focus: #a5ecda;
+        --radius: 8px;
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        letter-spacing: 0;
+      }
+
+      body {
+        min-width: 320px;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button,
+      input,
+      select,
+      a {
+        outline: none;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .app {
+        min-height: 100vh;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+          var(--bg);
+        background-size: 28px 28px;
+      }
+
+      .topbar {
+        min-height: 62px;
+        display: grid;
+        grid-template-columns: 240px minmax(240px, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(13, 15, 18, 0.96);
+      }
+
+      .brand {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .mark {
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.2;
+      }
+
+      .brand p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .search {
+        min-height: 40px;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 0 12px;
+        background: #0b0e11;
+        color: var(--text);
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 0 12px;
+        background: var(--surface);
+        color: var(--soft);
+        transition:
+          background-color 120ms ease-out,
+          border-color 120ms ease-out,
+          transform 80ms ease-out;
+      }
+
+      .btn:hover {
+        border-color: var(--line-strong);
+        background: var(--surface-2);
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn.primary {
+        border-color: rgba(99, 216, 181, 0.45);
+        background: rgba(99, 216, 181, 0.16);
+        color: #dcfff5;
+      }
+
+      .layout {
+        width: min(1380px, calc(100vw - 28px));
+        margin: 0 auto;
+        padding: 14px 0 24px;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .stat,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(20, 24, 29, 0.88);
+      }
+
+      .stat {
+        min-height: 86px;
+        padding: 12px;
+      }
+
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .value {
+        display: block;
+        color: var(--text);
+        font-size: 21px;
+        font-weight: 780;
+      }
+
+      .subvalue {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        display: inline-block;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(99, 216, 181, 0.12);
+      }
+
+      .dot.warn {
+        background: var(--amber);
+        box-shadow: 0 0 0 4px rgba(243, 203, 114, 0.12);
+      }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
+        gap: 12px;
+      }
+
+      .panel-head {
+        min-height: 54px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-head h2,
+      .panel-head h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .pill {
+        display: inline-flex;
+        min-height: 28px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 9px;
+        color: var(--soft);
+        font-family: var(--mono);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .pill.good {
+        border-color: rgba(99, 216, 181, 0.4);
+        background: var(--accent-soft);
+        color: #dcfff5;
+      }
+
+      .pill.warn {
+        border-color: rgba(243, 203, 114, 0.42);
+        background: var(--amber-soft);
+        color: #ffe8a7;
+      }
+
+      .graph-panel {
+        min-height: 566px;
+        overflow: hidden;
+      }
+
+      .graph-body {
+        position: relative;
+        min-height: 512px;
+        background:
+          radial-gradient(circle at 48% 44%, rgba(99, 216, 181, 0.13), transparent 30%),
+          radial-gradient(circle at 72% 24%, rgba(120, 186, 255, 0.09), transparent 28%),
+          #0a0d10;
+      }
+
+      .graph-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .graph-overlay {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: end;
+        pointer-events: none;
+      }
+
+      .query-card {
+        max-width: 560px;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: var(--radius);
+        padding: 12px;
+        background: rgba(10, 13, 16, 0.78);
+        backdrop-filter: blur(12px);
+      }
+
+      .query-card p {
+        margin: 0;
+        color: var(--soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .mono {
+        font-family: var(--mono);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .legend-item {
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 9px;
+        background: rgba(10, 13, 16, 0.74);
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .legend-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+
+      .legend-dot.source {
+        background: #9ba8ff;
+      }
+
+      .legend-dot.chunk {
+        background: var(--amber);
+      }
+
+      .legend-dot.mcp {
+        background: var(--blue);
+      }
+
+      .side-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .panel-body {
+        padding: 12px;
+      }
+
+      .list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .row {
+        min-height: 56px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 10px;
+        background: rgba(13, 15, 18, 0.48);
+      }
+
+      .row strong {
+        display: block;
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      .row span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 6px;
+        margin: 12px 0;
+        padding: 4px;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(13, 15, 18, 0.84);
+      }
+
+      .tab {
+        min-height: 40px;
+        flex: 0 0 auto;
+        border-radius: 6px;
+        padding: 0 13px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .tab:hover,
+      .tab[aria-selected="true"] {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+
+      .view[hidden] {
+        display: none;
+      }
+
+      .bottom-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .field label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .field input,
+      .field select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 0 11px;
+        background: #0b0e11;
+        color: var(--text);
+      }
+
+      .note {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0.001ms !important;
+          animation-duration: 0.001ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      @media (max-width: 1100px) {
+        .topbar,
+        .dashboard,
+        .bottom-grid,
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+
+        .actions {
+          justify-content: stretch;
+        }
+
+        .actions .btn {
+          flex: 1;
+        }
+
+        .status-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .layout {
+          width: min(100vw - 24px, 1380px);
+          padding-top: 12px;
+        }
+
+        .status-grid,
+        .row,
+        .graph-overlay {
+          grid-template-columns: 1fr;
+        }
+
+        .graph-panel {
+          min-height: 480px;
+        }
+
+        .graph-body {
+          min-height: 424px;
+        }
+
+        .panel-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .pill-row,
+        .legend {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">CA</div>
+          <div>
+            <h1>Citadel Knowledge Dashboard</h1>
+            <p>Live GraphRAG memory and MCP access.</p>
+          </div>
+        </div>
+        <input class="search" type="search" autocomplete="off" placeholder="Ask or search the Organization Vault" aria-label="Search Organization Vault" />
+        <div class="actions">
+          <button class="btn" type="button">Run sync</button>
+          <button class="btn primary" type="button">Connect MCP</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="status-grid" aria-label="Dashboard status">
+          <article class="stat">
+            <span class="label">Cron job</span>
+            <span class="value">Connected</span>
+            <span class="subvalue">next sync in 14m</span>
+          </article>
+          <article class="stat">
+            <span class="label">Indexed chunks</span>
+            <span class="value">18,432</span>
+            <span class="subvalue">312 added today</span>
+          </article>
+          <article class="stat">
+            <span class="label">Graph edges</span>
+            <span class="value">42,908</span>
+            <span class="subvalue">docs, chunks, sources, MCP</span>
+          </article>
+          <article class="stat">
+            <span class="label">MCP clients</span>
+            <span class="value">6 active</span>
+            <span class="subvalue">2 can add sources</span>
+          </article>
+        </section>
+
+        <section class="dashboard">
+          <section class="panel graph-panel" aria-labelledby="graph-title">
+            <div class="panel-head">
+              <h2 id="graph-title">Live knowledge graph</h2>
+              <div class="pill-row">
+                <span class="pill good">GraphRAG live</span>
+                <span class="pill">depth 3</span>
+                <span class="pill warn">3 weak links</span>
+              </div>
+            </div>
+            <div class="graph-body">
+              <canvas class="graph-canvas" id="graphCanvas" aria-label="Live GraphRAG graph with sources, chunks, Organization Vault, and MCP clients" role="img"></canvas>
+              <div class="graph-overlay">
+                <div class="query-card">
+                  <p><span class="mono">Current query:</span> What context should agents use from the Organization Vault?</p>
+                </div>
+                <div class="legend" aria-label="Graph legend">
+                  <span class="legend-item"><span class="legend-dot source"></span>Source</span>
+                  <span class="legend-item"><span class="legend-dot chunk"></span>Chunk</span>
+                  <span class="legend-item"><span class="legend-dot"></span>Knowledge</span>
+                  <span class="legend-item"><span class="legend-dot mcp"></span>MCP</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="side-stack">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Ingestion queue</h3>
+                <span class="pill good">running</span>
+              </div>
+              <div class="panel-body">
+                <ul class="list">
+                  <li class="row">
+                    <span class="dot"></span>
+                    <div><strong>GitHub docs</strong><span>92 files scanned, 41 chunks updated</span></div>
+                    <span class="pill">2m</span>
+                  </li>
+                  <li class="row">
+                    <span class="dot"></span>
+                    <div><strong>Architecture notes</strong><span>15 new relationships detected</span></div>
+                    <span class="pill">8m</span>
+                  </li>
+                  <li class="row">
+                    <span class="dot warn"></span>
+                    <div><strong>Contract exports</strong><span>waiting on token scope review</span></div>
+                    <span class="pill warn">hold</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>MCP access</h3>
+                <span class="pill">authorized</span>
+              </div>
+              <div class="panel-body">
+                <ul class="list">
+                  <li class="row">
+                    <span class="dot"></span>
+                    <div><strong>agent-runtime</strong><span>read chunks, fetch graph context</span></div>
+                    <button class="btn" type="button">Rotate</button>
+                  </li>
+                  <li class="row">
+                    <span class="dot"></span>
+                    <div><strong>docs-ingestor</strong><span>add sources, trigger indexing</span></div>
+                    <button class="btn" type="button">Revoke</button>
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <nav class="tabs" role="tablist" aria-label="Dashboard details">
+          <button class="tab" type="button" role="tab" aria-selected="true" aria-controls="activity" data-tab="activity">Activity</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="indexing" data-tab="indexing">Indexing</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="mcp" data-tab="mcp">MCP Tokens</button>
+        </nav>
+
+        <section class="view" id="activity" role="tabpanel">
+          <div class="bottom-grid">
+            <article class="panel">
+              <div class="panel-head"><h3>Recent learning</h3><span class="pill good">new</span></div>
+              <div class="panel-body">
+                <p class="note">The Organization Vault linked cron sync behavior to MCP source ingestion and updated retrieval ranking.</p>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><h3>Top source</h3><span class="pill">repo docs</span></div>
+              <div class="panel-body">
+                <p class="note">GitHub documentation contributed the most new chunks in the last sync window.</p>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><h3>Open issue</h3><span class="pill warn">review</span></div>
+              <div class="panel-body">
+                <p class="note">One MCP client can fetch contract context but cannot add contract exports yet.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="indexing" role="tabpanel" hidden>
+          <section class="panel">
+            <div class="panel-head"><h3>Indexing pipeline</h3><span class="pill good">healthy</span></div>
+            <div class="panel-body">
+              <ul class="list">
+                <li class="row"><span class="dot"></span><div><strong>Pull raw data</strong><span>Cron fetches docs, repos, notes, and architecture records.</span></div><span class="pill">cron</span></li>
+                <li class="row"><span class="dot"></span><div><strong>Chunk by meaning</strong><span>Semantic boundaries keep retrieval concise and useful.</span></div><span class="pill">18,432</span></li>
+                <li class="row"><span class="dot"></span><div><strong>Embed and link</strong><span>Chunks become graph nodes with source, topic, and relationship edges.</span></div><span class="pill">42,908</span></li>
+                <li class="row"><span class="dot"></span><div><strong>Optimize answers</strong><span>Retrieval returns ranked context for any authorized MCP client.</span></div><span class="pill good">live</span></li>
+              </ul>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="mcp" role="tabpanel" hidden>
+          <section class="panel">
+            <div class="panel-head"><h3>Issue MCP access</h3><span class="pill">token gated</span></div>
+            <div class="panel-body">
+              <div class="form-row">
+                <div class="field">
+                  <label for="client-name">Client name</label>
+                  <input id="client-name" type="text" autocomplete="organization" placeholder="agent-runtime" />
+                </div>
+                <div class="field">
+                  <label for="scope">Scope</label>
+                  <select id="scope">
+                    <option>Read knowledge graph</option>
+                    <option>Read and add sources</option>
+                    <option>Admin authorization</option>
+                  </select>
+                </div>
+                <button class="btn primary" type="button">Issue token</button>
+              </div>
+              <p class="note">Token secrets should only be generated server-side. This dashboard shows scope, expiration, rotation, and revocation status.</p>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const tabs = Array.from(document.querySelectorAll("[data-tab]"));
+      const panels = Array.from(document.querySelectorAll("[role='tabpanel']"));
+      const canvas = document.querySelector("#graphCanvas");
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      const nodes = [
+        { id: "kb", label: "Knowledge base", kind: "knowledge", x: 0, y: 0, z: 0, size: 22 },
+        { id: "cron", label: "Cron sync", kind: "source", x: -0.78, y: -0.42, z: 0.1, size: 13 },
+        { id: "repo", label: "Repo docs", kind: "source", x: -0.92, y: 0.12, z: -0.22, size: 12 },
+        { id: "notes", label: "Architecture notes", kind: "source", x: -0.62, y: 0.62, z: 0.24, size: 12 },
+        { id: "chunks", label: "18.4k chunks", kind: "chunk", x: -0.24, y: -0.62, z: -0.16, size: 14 },
+        { id: "embed", label: "Embeddings", kind: "chunk", x: 0.28, y: -0.64, z: 0.2, size: 12 },
+        { id: "rank", label: "Retrieval ranker", kind: "knowledge", x: 0.56, y: -0.18, z: -0.26, size: 13 },
+        { id: "mcpRead", label: "MCP fetch", kind: "mcp", x: 0.86, y: 0.2, z: 0.18, size: 13 },
+        { id: "mcpAdd", label: "MCP add", kind: "mcp", x: 0.64, y: 0.62, z: -0.18, size: 12 },
+        { id: "openrouter", label: "OpenRouter", kind: "chunk", x: -0.02, y: 0.72, z: 0.34, size: 12 },
+        { id: "auth", label: "Token scopes", kind: "mcp", x: 0.3, y: 0.34, z: 0.42, size: 11 },
+      ];
+
+      const edges = [
+        ["cron", "repo"],
+        ["repo", "chunks"],
+        ["notes", "chunks"],
+        ["openrouter", "chunks"],
+        ["chunks", "embed"],
+        ["embed", "kb"],
+        ["kb", "rank"],
+        ["rank", "mcpRead"],
+        ["mcpAdd", "kb"],
+        ["auth", "mcpRead"],
+        ["auth", "mcpAdd"],
+        ["kb", "openrouter"],
+      ];
+
+      const colors = {
+        source: "#9ba8ff",
+        chunk: "#f3cb72",
+        knowledge: "#63d8b5",
+        mcp: "#78baff",
+      };
+
+      let projected = [];
+
+      function activateTab(name) {
+        tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === name)));
+        panels.forEach((panel) => {
+          panel.hidden = panel.id !== name;
+        });
+      }
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+        tab.addEventListener("keydown", (event) => {
+          if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+          event.preventDefault();
+          const index = tabs.indexOf(tab);
+          const nextIndex = event.key === "ArrowRight" ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
+          tabs[nextIndex].focus();
+          activateTab(tabs[nextIndex].dataset.tab);
+        });
+      });
+
+      function resizeCanvas() {
+        const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.round(rect.width * ratio));
+        canvas.height = Math.max(1, Math.round(rect.height * ratio));
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return { ctx, width: rect.width, height: rect.height };
+      }
+
+      function project(node, angle, width, height) {
+        const scale = Math.min(width, height) * 0.52;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const x = node.x * cos - node.z * sin;
+        const z = node.x * sin + node.z * cos;
+        const y = node.y + Math.sin(angle * 0.8 + node.x) * 0.03;
+        const perspective = 1.12 / (1.6 - z * 0.42);
+        return {
+          node,
+          x: width / 2 + x * scale * perspective,
+          y: height / 2 + y * scale * perspective,
+          z,
+          radius: node.size * perspective,
+        };
+      }
+
+      function roundRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+      }
+
+      function draw(time) {
+        if (!canvas) return;
+        const { ctx, width, height } = resizeCanvas();
+        const angle = reducedMotion ? 0.55 : time * 0.00012;
+        projected = nodes.map((node) => project(node, angle, width, height));
+        const byId = new Map(projected.map((point) => [point.node.id, point]));
+
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        for (let i = 0; i < 4; i += 1) {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, width * (0.16 + i * 0.08), height * (0.1 + i * 0.045), angle + i * 0.5, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(99,216,181,${0.09 - i * 0.014})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        edges.forEach(([from, to]) => {
+          const a = byId.get(from);
+          const b = byId.get(to);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.quadraticCurveTo((a.x + b.x) / 2 + (b.y - a.y) * 0.04, (a.y + b.y) / 2 + (a.x - b.x) * 0.03, b.x, b.y);
+          ctx.strokeStyle = "rgba(150,170,185,0.4)";
+          ctx.lineWidth = 1.15;
+          ctx.stroke();
+        });
+
+        projected
+          .slice()
+          .sort((a, b) => a.z - b.z)
+          .forEach((point) => {
+            const { node } = point;
+            const color = colors[node.kind];
+            const core = node.id === "kb";
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, point.radius + (core ? 12 : 6), 0, Math.PI * 2);
+            ctx.fillStyle = core ? `${color}32` : `${color}18`;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, point.radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            ctx.strokeStyle = core ? "rgba(255,255,255,0.76)" : "rgba(255,255,255,0.26)";
+            ctx.lineWidth = core ? 1.8 : 1;
+            ctx.stroke();
+
+            const label = node.label;
+            ctx.font = core ? "700 12px Inter, system-ui, sans-serif" : "600 11px Inter, system-ui, sans-serif";
+            const labelWidth = Math.min(190, ctx.measureText(label).width + 22);
+            const x = point.x + point.radius + 9;
+            const y = point.y - 13;
+            ctx.fillStyle = "rgba(10,13,16,0.72)";
+            ctx.strokeStyle = "rgba(255,255,255,0.13)";
+            roundRect(ctx, x, y, labelWidth, 28, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "#f4f7f8";
+            ctx.fillText(label, x + 8, y + 18);
+          });
+
+        if (!reducedMotion) requestAnimationFrame(draw);
+      }
+
+      window.addEventListener("resize", () => draw(performance.now()));
+      requestAnimationFrame(draw);
+    </script>
+  </body>
+</html>

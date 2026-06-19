@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class IngestDecision:
+    accepted: bool
+    reason: str = "accepted"
+
+
+@dataclass(frozen=True)
+class IngestRequest:
+    data: str
+    dataset: str
+    tags: tuple[str, ...] = field(default_factory=tuple)
+    session_id: str | None = None
+
+
+@dataclass(frozen=True)
+class IngestResult:
+    accepted: bool
+    reason: str
+    dataset: str
+    tags: tuple[str, ...]
+    cognee_result: Any = None
+
+
+@dataclass(frozen=True)
+class FeedbackRequest:
+    qa_id: str
+    score: int | None = None
+    text: str | None = None
+    session_id: str | None = None
+    dataset: str | None = None
+
+
+@dataclass(frozen=True)
+class FeedbackResult:
+    recorded: bool
+    improved: bool

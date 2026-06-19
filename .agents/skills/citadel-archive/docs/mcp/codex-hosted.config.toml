@@ -1,0 +1,21 @@
+[mcp_servers.citadel]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote",
+  "https://citadel-archive-production.up.railway.app/mcp/",
+  "--header",
+  "Authorization: Bearer PASTE_ONCE_IN_LOCAL_CODEX_CONFIG",
+]
+
+[mcp_servers.citadel.tools.citadel_ingest]
+approval_mode = "approve"
+
+[mcp_servers.citadel.tools.citadel_record_feedback]
+approval_mode = "approve"
+
+[mcp_servers.citadel.tools.citadel_run_learning_agent]
+approval_mode = "approve"
+
+[mcp_servers.citadel.tools.citadel_improve]
+approval_mode = "approve"

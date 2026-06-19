@@ -1,0 +1,402 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from kb.config import CitadelConfig
+from kb.github_sync import (
+    GitHubCommit,
+    GitHubEvent,
+    GitHubOrgClient,
+    GitHubOrgSyncer,
+    GitHubPullRequest,
+    GitHubRepo,
+)
+from kb.models import IngestResult
+
+
+class FakeCitadel:
+    def __init__(self, config: CitadelConfig) -> None:
+        self.config = config
+        self.ingest_calls: list[dict[str, Any]] = []
+        self.improve_calls: list[dict[str, Any]] = []
+
+    async def ingest(self, data: str, **kwargs: Any) -> IngestResult:
+        self.ingest_calls.append({"data": data, **kwargs})
+        return IngestResult(True, "accepted", kwargs["dataset"], tuple(kwargs["tags"]))
+
+    async def improve(self, **kwargs: Any) -> dict[str, Any]:
+        self.improve_calls.append(kwargs)
+        return {"ok": True}
+
+
+class FailingImproveCitadel(FakeCitadel):
+    async def improve(self, **kwargs: Any) -> dict[str, Any]:
+        self.improve_calls.append(kwargs)
+        raise RuntimeError("llm unavailable")
+
+
+class FakeGitHubClient:
+    def fetch_repos(
+        self,
+        org: str,
+        *,
+        max_repos: int,
+        include_private: bool = True,
+    ) -> list[GitHubRepo]:
+        return [
+            GitHubRepo(
+                name="agent",
+                full_name=f"{org}/agent",
+                html_url=f"https://github.com/{org}/agent",
+                description="Agent runtime",
+                language="TypeScript",
+                pushed_at="2026-05-21T00:00:00Z",
+                updated_at="2026-05-21T00:00:00Z",
+                default_branch="main",
+                visibility="public",
+                archived=False,
+                stargazers_count=7,
+                forks_count=2,
+                open_issues_count=1,
+                topics=("masumi", "agent"),
+                license_name="Apache License 2.0",
+            )
+        ][:max_repos]
+
+    def fetch_events(self, org: str, *, max_events: int) -> list[GitHubEvent]:
+        return [
+            GitHubEvent(
+                id="evt-1",
+                type="PushEvent",
+                repo=f"{org}/agent",
+                actor="sarthib7",
+                created_at="2026-05-21T00:00:00Z",
+                summary="Pushed 1 commit to main: update docs",
+            )
+        ][:max_events]
+
+    def fetch_commits(self, repo: GitHubRepo, *, max_commits: int) -> list[GitHubCommit]:
+        return [
+            GitHubCommit(
+                repo=repo.full_name,
+                sha="abc123def456",
+                html_url=f"{repo.html_url}/commit/abc123def456",
+                message="teach the archive about commits",
+                authored_at="2026-05-21T00:00:00Z",
+                author_name="Sarthi Borkar",
+                author_login="sarthib7",
+            )
+        ][:max_commits]
+
+    def fetch_pull_requests(
+        self,
+        repo: GitHubRepo,
+        *,
+        max_pull_requests: int,
+    ) -> list[GitHubPullRequest]:
+        return []
+
+
+class RecordingGitHubOrgClient(GitHubOrgClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+
+    def _get_json(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        self.requests.append((path, params))
+        return []
+
+
+def test_github_org_client_requests_all_org_repositories() -> None:
+    client = RecordingGitHubOrgClient()
+
+    client.fetch_repos("masumi-network", max_repos=100)
+
+    assert client.requests[0] == (
+        "/orgs/masumi-network/repos",
+        {
+            "type": "all",
+            "sort": "pushed",
+            "direction": "desc",
+            "per_page": 100,
+            "page": 1,
+        },
+    )
+
+
+def test_github_org_client_can_request_public_repositories_only() -> None:
+    client = RecordingGitHubOrgClient()
+
+    client.fetch_repos("masumi-network", max_repos=100, include_private=False)
+
+    assert client.requests[0][1]["type"] == "public"
+
+
+def test_github_org_client_requests_pull_requests_by_recent_updates() -> None:
+    client = RecordingGitHubOrgClient()
+    repo = GitHubRepo(
+        name="agent",
+        full_name="masumi-network/agent",
+        html_url="https://github.com/masumi-network/agent",
+        description=None,
+        language=None,
+        pushed_at=None,
+        updated_at=None,
+        default_branch="main",
+        visibility="public",
+        archived=False,
+        stargazers_count=0,
+        forks_count=0,
+        open_issues_count=0,
+        topics=(),
+        license_name=None,
+    )
+
+    client.fetch_pull_requests(repo, max_pull_requests=5)
+
+    assert client.requests[0] == (
+        "/repos/masumi-network/agent/pulls",
+        {
+            "state": "all",
+            "sort": "updated",
+            "direction": "desc",
+            "per_page": 5,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_github_sync_ingests_daily_digest_and_persists_state(tmp_path: Any) -> None:
+    config = CitadelConfig(
+        github_sync_dataset="masumi-network",
+        github_sync_session="masumi-github-daily",
+        github_sync_state_path=str(tmp_path / "github_state.json"),
+        github_sync_run_improve=True,
+    )
+    citadel = FakeCitadel(config)
+    syncer = GitHubOrgSyncer(citadel, client=FakeGitHubClient(), org="masumi-network")
+
+    result = await syncer.run()
+    status = await syncer.status()
+
+    assert result["repos_scanned"] == 1
+    assert result["changed_count"] == 1
+    assert result["event_count"] == 1
+    assert result["commit_count"] == 1
+    assert result["ingested"] is True
+    assert result["improved"] is True
+    assert "masumi-network/agent" in citadel.ingest_calls[0]["data"]
+    assert "teach the archive about commits" in citadel.ingest_calls[0]["data"]
+    assert citadel.ingest_calls[0]["dataset"] == "masumi-network"
+    assert citadel.improve_calls[0]["session_ids"] == ["masumi-github-daily"]
+    state = json.loads(Path(config.github_sync_state_path).read_text(encoding="utf-8"))
+    assert "teach the archive about commits" in state["last_digest"]
+    assert status["tracked_repositories"] == 1
+    assert status["seen_events"] == 1
+    assert status["tracked_commit_repositories"] == 1
+
+
+@pytest.mark.asyncio
+async def test_github_sync_persists_digest_when_improve_fails(tmp_path: Any) -> None:
+    config = CitadelConfig(
+        github_sync_dataset="masumi-network",
+        github_sync_session="masumi-github-daily",
+        github_sync_state_path=str(tmp_path / "github_state.json"),
+        github_sync_run_improve=True,
+    )
+    citadel = FailingImproveCitadel(config)
+    syncer = GitHubOrgSyncer(citadel, client=FakeGitHubClient(), org="masumi-network")
+
+    result = await syncer.run()
+    status = await syncer.status()
+
+    assert result["ingested"] is True
+    assert result["improved"] is False
+    assert result["improve_error"] == "llm unavailable"
+    assert status["tracked_repositories"] == 1
+    assert status["seen_events"] == 1
+    assert citadel.improve_calls[0]["session_ids"] == ["masumi-github-daily"]
+
+
+@pytest.mark.asyncio
+async def test_github_sync_can_skip_unchanged_ingest(tmp_path: Any) -> None:
+    config = CitadelConfig(
+        github_sync_state_path=str(tmp_path / "github_state.json"),
+        github_sync_ingest_unchanged=False,
+    )
+    citadel = FakeCitadel(config)
+    syncer = GitHubOrgSyncer(
+        citadel,
+        client=FakeGitHubClient(),
+        org="masumi-network",
+        ingest_unchanged=False,
+    )
+
+    await syncer.run()
+    second = await syncer.run()
+
+    assert second["changed_count"] == 0
+    assert second["event_count"] == 0
+    assert second["commit_count"] == 0
+    assert len(citadel.ingest_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_github_sync_returns_open_and_merged_pull_requests(tmp_path: Any) -> None:
+    class PullRequestGitHubClient(FakeGitHubClient):
+        def fetch_pull_requests(
+            self,
+            repo: GitHubRepo,
+            *,
+            max_pull_requests: int,
+        ) -> list[GitHubPullRequest]:
+            return [
+                GitHubPullRequest(
+                    repo=repo.full_name,
+                    number=42,
+                    title="Ship organization digest",
+                    html_url=f"{repo.html_url}/pull/42",
+                    state="open",
+                    draft=False,
+                    user_login="sarthib7",
+                    created_at="2026-06-03T07:00:00Z",
+                    updated_at="2026-06-03T08:00:00Z",
+                    merged_at=None,
+                ),
+                GitHubPullRequest(
+                    repo=repo.full_name,
+                    number=41,
+                    title="Add source packet",
+                    html_url=f"{repo.html_url}/pull/41",
+                    state="closed",
+                    draft=False,
+                    user_login="sarthib7",
+                    created_at="2026-06-02T07:00:00Z",
+                    updated_at="2026-06-03T08:00:00Z",
+                    merged_at="2026-06-03T08:30:00Z",
+                ),
+            ][:max_pull_requests]
+
+    config = CitadelConfig(
+        github_sync_state_path=str(tmp_path / "github_state.json"),
+        organization_digest_window_hours=24 * 14,
+    )
+    citadel = FakeCitadel(config)
+    syncer = GitHubOrgSyncer(
+        citadel,
+        client=PullRequestGitHubClient(),
+        org="masumi-network",
+    )
+
+    result = await syncer.run()
+
+    assert result["open_pull_request_count"] == 1
+    assert result["merged_pull_request_count"] == 1
+    assert result["open_pull_requests"][0]["number"] == 42
+    assert result["merged_pull_requests"][0]["number"] == 41
+    assert result["active_repositories"][0]["repo"] == "masumi-network/agent"
+
+
+@pytest.mark.asyncio
+async def test_github_sync_filters_repositories_by_policy(tmp_path: Any) -> None:
+    class MultiRepoGitHubClient(FakeGitHubClient):
+        def fetch_repos(
+            self,
+            org: str,
+            *,
+            max_repos: int,
+            include_private: bool = True,
+        ) -> list[GitHubRepo]:
+            return [
+                GitHubRepo(
+                    name="agent",
+                    full_name=f"{org}/agent",
+                    html_url=f"https://github.com/{org}/agent",
+                    description=None,
+                    language="Python",
+                    pushed_at="2026-05-21T00:00:00Z",
+                    updated_at="2026-05-21T00:00:00Z",
+                    default_branch="main",
+                    visibility="private",
+                    archived=False,
+                    stargazers_count=0,
+                    forks_count=0,
+                    open_issues_count=0,
+                    topics=(),
+                    license_name=None,
+                ),
+                GitHubRepo(
+                    name="sandbox",
+                    full_name=f"{org}/sandbox",
+                    html_url=f"https://github.com/{org}/sandbox",
+                    description=None,
+                    language="Python",
+                    pushed_at="2026-05-21T00:00:00Z",
+                    updated_at="2026-05-21T00:00:00Z",
+                    default_branch="main",
+                    visibility="private",
+                    archived=False,
+                    stargazers_count=0,
+                    forks_count=0,
+                    open_issues_count=0,
+                    topics=(),
+                    license_name=None,
+                ),
+            ]
+
+    config = CitadelConfig(
+        github_sync_state_path=str(tmp_path / "github_state.json"),
+        github_sync_repo_allowlist=("masumi-network/agent",),
+        github_sync_repo_denylist=("sandbox",),
+    )
+    citadel = FakeCitadel(config)
+    syncer = GitHubOrgSyncer(
+        citadel,
+        client=MultiRepoGitHubClient(),
+        org="masumi-network",
+    )
+
+    result = await syncer.run()
+
+    assert result["repos_scanned"] == 1
+    assert result["private_repo_count"] == 1
+    assert result["changed_repositories"][0]["full_name"] == "masumi-network/agent"
+
+
+@pytest.mark.asyncio
+async def test_github_sync_security_scan_blocks_secret_metadata(tmp_path: Any) -> None:
+    class SecretCommitGitHubClient(FakeGitHubClient):
+        def fetch_commits(self, repo: GitHubRepo, *, max_commits: int) -> list[GitHubCommit]:
+            return [
+                GitHubCommit(
+                    repo=repo.full_name,
+                    sha="abc123def456",
+                    html_url=f"{repo.html_url}/commit/abc123def456",
+                    message="rotate password=not-a-real-secret-value",
+                    authored_at="2026-05-21T00:00:00Z",
+                    author_name="Sarthi Borkar",
+                    author_login="sarthib7",
+                )
+            ]
+
+    config = CitadelConfig(github_sync_state_path=str(tmp_path / "github_state.json"))
+    citadel = FakeCitadel(config)
+    syncer = GitHubOrgSyncer(
+        citadel,
+        client=SecretCommitGitHubClient(),
+        org="masumi-network",
+    )
+
+    result = await syncer.run()
+    serialized_findings = json.dumps(result["security_scan"]["findings"])
+
+    assert result["ingested"] is False
+    assert result["ingest_reason"] == "blocked_by_security_scan"
+    assert result["security_scan"]["blocked"] is True
+    assert result["security_scan"]["highest_severity"] == "high"
+    assert citadel.ingest_calls == []
+    assert "not-a-real-secret-value" not in serialized_findings
