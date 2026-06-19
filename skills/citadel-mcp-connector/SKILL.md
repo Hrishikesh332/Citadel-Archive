@@ -1,6 +1,6 @@
 ---
 name: citadel-mcp-connector
-description: Connects Claude Code, Cursor, Codex, or any MCP-capable agent to the Citadel Archive Organization Vault over its hosted MCP endpoint — no clone, no Python, no local install. Use when the user shares this skill URL, pastes a Citadel token, or says connect/set up/configure Citadel MCP, citadel plugin, organization vault MCP, or "add citadel to my agent". Run the full workflow: detect client, collect only the token, write the remote MCP config (URL + Authorization header), verify, then search the vault. Triggers include "connect citadel", "set up citadel mcp", "citadel mcp connector", "citadel archive mcp", and https://citadel-archive-production.up.railway.app/skills/connect.
+description: Connects Claude Code, Cursor, Codex, or any MCP-capable agent to the Citadel Archive Organization Vault over its hosted MCP endpoint — no clone, no Python, no local install. Use when the user shares this skill URL, pastes a Citadel token, or says connect/set up/configure Citadel MCP, citadel plugin, organization vault MCP, or "add citadel to my agent". Run the full workflow: detect client, collect only the token, write the remote MCP config (URL + Authorization header), verify, then search the vault. Triggers include "connect citadel", "set up citadel mcp", "citadel mcp connector", "citadel archive mcp", and https://citadel-archive.onrender.com/skills/connect.
 ---
 
 # Citadel MCP Connector
@@ -9,7 +9,7 @@ Citadel is served as a **hosted MCP endpoint**. Agents connect with a URL and a
 token — there is **no repository to clone**, no `uv`, and no local Python.
 
 ```
-MCP endpoint:  https://citadel-archive-production.up.railway.app/mcp/
+MCP endpoint:  https://citadel-archive.onrender.com/mcp/
 Auth:          Authorization: Bearer ctdl_<your-token>
 ```
 
@@ -21,12 +21,12 @@ Auth:          Authorization: Bearer ctdl_<your-token>
 | [Citadel-Archive](https://github.com/masumi-network/Citadel-Archive) — app code, skills | Team/organization memory behind the token |
 
 Never commit tokens. Never copy vault search results into a public repo or issue.
-Boundary detail: `https://citadel-archive-production.up.railway.app/skills/boundary`
+Boundary detail: `https://citadel-archive.onrender.com/skills/boundary`
 
 ## Skill URLs
 
-- Connect (this skill): `https://citadel-archive-production.up.railway.app/skills/connect`
-- After MCP works: `https://citadel-archive-production.up.railway.app/skills/vault`
+- Connect (this skill): `https://citadel-archive.onrender.com/skills/connect`
+- After MCP works: `https://citadel-archive.onrender.com/skills/vault`
 - Full repo skill install: `npx skills add masumi-network/Citadel-Archive`
 
 If the user shares the `npx skills add` command, install the root
@@ -54,7 +54,7 @@ Defaults (override only if the user does):
 
 | Setting | Default |
 |---|---|
-| MCP endpoint | `https://citadel-archive-production.up.railway.app/mcp/` |
+| MCP endpoint | `https://citadel-archive.onrender.com/mcp/` |
 | Token env name | `CITADEL_MCP_ACCESS_TOKEN` |
 | Search dataset | `masumi-network` (the server defaults this too) |
 
@@ -71,7 +71,7 @@ secret store — **never** as a literal in a tracked file.
   "mcpServers": {
     "citadel": {
       "type": "http",
-      "url": "https://citadel-archive-production.up.railway.app/mcp/",
+      "url": "https://citadel-archive.onrender.com/mcp/",
       "headers": {
         "Authorization": "Bearer ${CITADEL_MCP_ACCESS_TOKEN}"
       }
@@ -84,7 +84,7 @@ Or one command (token expanded from your shell):
 
 ```bash
 claude mcp add --transport http citadel \
-  https://citadel-archive-production.up.railway.app/mcp/ \
+  https://citadel-archive.onrender.com/mcp/ \
   --header "Authorization: Bearer ${CITADEL_MCP_ACCESS_TOKEN}"
 ```
 
@@ -96,7 +96,7 @@ Export the token first: `export CITADEL_MCP_ACCESS_TOKEN='ctdl_...'`.
 {
   "mcpServers": {
     "citadel": {
-      "url": "https://citadel-archive-production.up.railway.app/mcp/",
+      "url": "https://citadel-archive.onrender.com/mcp/",
       "headers": { "Authorization": "Bearer ctdl_..." }
     }
   }
@@ -114,7 +114,7 @@ For a client that only speaks stdio, bridge to the hosted endpoint with
 command = "npx"
 args = [
   "-y", "mcp-remote",
-  "https://citadel-archive-production.up.railway.app/mcp/",
+  "https://citadel-archive.onrender.com/mcp/",
   "--header", "Authorization: Bearer ctdl_...",
 ]
 ```
@@ -130,9 +130,9 @@ bridge above.
 **A. HTTP reachability (works immediately):**
 
 ```bash
-curl -fsS "https://citadel-archive-production.up.railway.app/healthz"
+curl -fsS "https://citadel-archive.onrender.com/healthz"
 curl -fsS -H "Authorization: Bearer $CITADEL_MCP_ACCESS_TOKEN" \
-  "https://citadel-archive-production.up.railway.app/api/session"
+  "https://citadel-archive.onrender.com/api/session"
 ```
 
 Expect HTTP 200 and JSON with `role` / `actor`. On 401 the token is missing,
@@ -206,6 +206,6 @@ Production smoke status, last verified 2026-06-02 at commit `7a4a1d9`:
 
 ## Reference
 
-- Hosted MCP URL: `https://citadel-archive-production.up.railway.app/mcp/`
-- Hosted UI (create tokens): `https://citadel-archive-production.up.railway.app`
-- Vault usage skill: `https://citadel-archive-production.up.railway.app/skills/vault`
+- Hosted MCP URL: `https://citadel-archive.onrender.com/mcp/`
+- Hosted UI (create tokens): `https://citadel-archive.onrender.com`
+- Vault usage skill: `https://citadel-archive.onrender.com/skills/vault`
